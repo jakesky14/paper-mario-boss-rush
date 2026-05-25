@@ -1,0 +1,2231 @@
+import { BOSS_DRAW_FNS, drawBoss0WithPencils } from './bosses';
+import { NUM_RINGS, NUM_PANELS, simulatePath } from './rings';
+import titleBgSrc from '../LegionofStationery.webp';
+import menuBgSrc from '../91307770_p0_master1200.jpg';
+import shopBgSrc from '../shop_background.png';
+// Background images — loaded once at startup
+const _titleBg = new Image();
+_titleBg.src = titleBgSrc;
+const _menuBg = new Image();
+_menuBg.src = menuBgSrc;
+const _shopBg = new Image();
+_shopBg.src = shopBgSrc;
+function drawBgImage(ctx, img, fallback) {
+    if (img.complete && img.naturalWidth > 0) {
+        ctx.drawImage(img, 0, 0, CANVAS_W, CANVAS_H);
+    }
+    else {
+        ctx.fillStyle = fallback;
+        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    }
+}
+// Shop item definitions (must match SHOP_COSTS order in game.ts)
+const SHOP_ITEMS = [
+    { key: 'heartPlus', name: 'Heart Plus', cost: 500, desc: '+5 Max HP (bonus on run start)' },
+    { key: 'silverHeartPlus', name: 'Silver Heart Plus', cost: 1000, desc: '+10 Max HP (bonus on run start)' },
+    { key: 'goldHeartPlus', name: 'Gold Heart Plus', cost: 2000, desc: '+20 Max HP (bonus on run start)' },
+    { key: 'guardPlus', name: 'Guard Plus', cost: 500, desc: 'Reduce damage 5-15% per hit' },
+    { key: 'silverGuardPlus', name: 'Silver Guard Plus', cost: 1000, desc: 'Reduce damage 10-20% per hit' },
+    { key: 'goldGuardPlus', name: 'Gold Guard Plus', cost: 2000, desc: 'Reduce damage 20-30% per hit' },
+    { key: 'timePlus', name: 'Time Plus', cost: 500, desc: '+5-15s Puzzle Timer per turn' },
+    { key: 'silverTimePlus', name: 'Silver Time Plus', cost: 1000, desc: '+15-25s Puzzle Timer per turn' },
+    { key: 'goldTimePlus', name: 'Gold Time Plus', cost: 2000, desc: '+25-50s Puzzle Timer per turn' },
+    { key: 'maxUpHeart', name: 'Max-Up Heart', cost: 1000, desc: '+20 Max HP (permanent, cap 200)' },
+];
+// Layout constants
+export const CANVAS_W = 900;
+export const CANVAS_H = 680;
+export const RING_CX = 430;
+export const RING_CY = 350;
+export const BOSS_RADIUS = 70;
+export const RING_WIDTH = 50;
+export const ARC_GAP_DEG = 1.5; // degrees gap between panels
+const MARIO_SLOT = 8;
+// Panel fill colors
+const PANEL_COLORS = {
+    empty: '',
+    action: '#cc2222',
+    heal: '#22aa55',
+    arrow_up: '#44aa44',
+    arrow_left: '#339933',
+    arrow_right: '#33aa33',
+    plus_one: '#aa44cc',
+    double_power: '#cc9900',
+    treasure_chest: '#aa6600',
+    on_panel: '#22aa44',
+    magic_circle: '#222222',
+    coin: '#ffdd00',
+};
+// Ring background colors — warm tones matching screenshot
+const RING_BG_COLORS = ['#d4872a', '#e0a030', '#c8b870', '#b8a860'];
+function panelArcSpan() {
+    return (2 * Math.PI) / NUM_PANELS;
+}
+function ringInnerRadius(ringIndex) {
+    return BOSS_RADIUS + ringIndex * RING_WIDTH;
+}
+function ringOuterRadius(ringIndex) {
+    return BOSS_RADIUS + (ringIndex + 1) * RING_WIDTH;
+}
+// Draw an arrow triangle pointing in the given angle direction
+function drawArrowTriangle(ctx, cx, cy, angle, size = 10) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, -size);
+    ctx.lineTo(size * 0.65, size * 0.5);
+    ctx.lineTo(-size * 0.65, size * 0.5);
+    ctx.closePath();
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.restore();
+}
+// Draw a single panel as a pie slice with icon
+function drawPanel(ctx, ringIndex, slotIndex, panelType, cx, cy, rotationOffset, highlighted, columnHighlighted, isMarioColumn, pathHighlight, isCursorColumn = false, magicCircleActive = false) {
+    const innerR = ringInnerRadius(ringIndex);
+    const outerR = ringOuterRadius(ringIndex);
+    const arcSpan = panelArcSpan();
+    const gapRad = (ARC_GAP_DEG * Math.PI) / 180;
+    const startAngle = (slotIndex / NUM_PANELS) * Math.PI * 2 - Math.PI / 2 + rotationOffset + gapRad / 2;
+    const endAngle = startAngle + arcSpan - gapRad;
+    // Panel fill
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, startAngle, endAngle);
+    ctx.arc(cx, cy, innerR, endAngle, startAngle, true);
+    ctx.closePath();
+    let fillColor;
+    if (panelType === 'empty') {
+        fillColor = isMarioColumn ? lightenColor(RING_BG_COLORS[ringIndex], 20) : RING_BG_COLORS[ringIndex];
+    }
+    else if (panelType === 'magic_circle') {
+        fillColor = magicCircleActive ? '#ccaa00' : '#222222';
+        if (isMarioColumn)
+            fillColor = lightenColor(fillColor, 20);
+    }
+    else {
+        fillColor = PANEL_COLORS[panelType];
+        if (isMarioColumn) {
+            fillColor = lightenColor(fillColor, 20);
+        }
+        if (columnHighlighted && !isMarioColumn) {
+            fillColor = lightenColor(fillColor, 15);
+        }
+    }
+    if (isCursorColumn) {
+        // Tint with cyan overlay effect (lighten toward cyan)
+        fillColor = blendWithCyan(fillColor, 0.35);
+    }
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+    // Border — path highlight gets bright yellow/white glow
+    if (pathHighlight) {
+        ctx.strokeStyle = '#ffee00';
+        ctx.lineWidth = 3;
+    }
+    else {
+        ctx.strokeStyle = highlighted ? '#ffffff' : '#000000';
+        ctx.lineWidth = highlighted ? 2.5 : 0.8;
+    }
+    ctx.stroke();
+    // Draw icon
+    const midAngle = (startAngle + endAngle) / 2;
+    const midR = (innerR + outerR) / 2;
+    const iconX = cx + Math.cos(midAngle) * midR;
+    const iconY = cy + Math.sin(midAngle) * midR;
+    if (panelType !== 'empty') {
+        drawPanelIcon(ctx, panelType, iconX, iconY, RING_WIDTH * 0.28, midAngle, midR, slotIndex, cx, cy, magicCircleActive);
+    }
+}
+function drawPanelIcon(ctx, panelType, x, y, size, midAngle, midR, slotIndex, ringCx, ringCy, magicCircleActive = false) {
+    ctx.save();
+    ctx.translate(x, y);
+    switch (panelType) {
+        case 'action': {
+            // Fist icon
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(0, size * 0.1, size * 0.55, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillRect(-size * 0.5, -size * 0.65, size * 1.0, size * 0.55);
+            ctx.beginPath();
+            ctx.arc(-size * 0.6, -size * 0.1, size * 0.25, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+        }
+        case 'heal': {
+            // Green heart
+            ctx.fillStyle = '#44cc66';
+            const hs = size * 0.85;
+            ctx.beginPath();
+            ctx.moveTo(0, hs * 0.3);
+            ctx.bezierCurveTo(-hs * 0.1, -hs * 0.1, -hs, -hs * 0.1, -hs * 0.5, -hs * 0.5);
+            ctx.bezierCurveTo(-hs * 0.1, -hs * 0.9, 0, -hs * 0.6, 0, -hs * 0.4);
+            ctx.bezierCurveTo(0, -hs * 0.6, hs * 0.1, -hs * 0.9, hs * 0.5, -hs * 0.5);
+            ctx.bezierCurveTo(hs, -hs * 0.1, hs * 0.1, -hs * 0.1, 0, hs * 0.3);
+            ctx.closePath();
+            ctx.fill();
+            break;
+        }
+        case 'arrow_up': {
+            // Arrow pointing inward (toward ring center)
+            ctx.restore();
+            const inwardAngle = Math.atan2(ringCy - y, ringCx - x);
+            drawArrowTriangle(ctx, x, y, inwardAngle + Math.PI / 2, size * 0.9);
+            return;
+        }
+        case 'arrow_left': {
+            // Arrow pointing toward adjacent slot at (slotIndex - 1) in same ring
+            ctx.restore();
+            const arcSpanL = (2 * Math.PI) / NUM_PANELS;
+            const targetAngleL = midAngle - arcSpanL;
+            const targetXL = ringCx + midR * Math.cos(targetAngleL);
+            const targetYL = ringCy + midR * Math.sin(targetAngleL);
+            drawArrowTriangle(ctx, x, y, Math.atan2(targetYL - y, targetXL - x) + Math.PI / 2, size * 0.9);
+            return;
+        }
+        case 'arrow_right': {
+            // Arrow pointing toward adjacent slot at (slotIndex + 1) in same ring
+            ctx.restore();
+            const arcSpanR = (2 * Math.PI) / NUM_PANELS;
+            const targetAngleR = midAngle + arcSpanR;
+            const targetXR = ringCx + midR * Math.cos(targetAngleR);
+            const targetYR = ringCy + midR * Math.sin(targetAngleR);
+            drawArrowTriangle(ctx, x, y, Math.atan2(targetYR - y, targetXR - x) + Math.PI / 2, size * 0.9);
+            return;
+        }
+        case 'plus_one': {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold 11px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('+1', 0, 0);
+            break;
+        }
+        case 'double_power': {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold 11px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('×2', 0, 0);
+            break;
+        }
+        case 'treasure_chest': {
+            // Chest icon
+            ctx.fillStyle = '#8b5a00';
+            ctx.fillRect(-size * 0.7, -size * 0.2, size * 1.4, size * 0.9);
+            ctx.fillStyle = '#c8860a';
+            ctx.fillRect(-size * 0.7, -size * 0.5, size * 1.4, size * 0.4);
+            ctx.fillStyle = '#ffdd44';
+            ctx.fillRect(-size * 0.15, -size * 0.1, size * 0.3, size * 0.35);
+            break;
+        }
+        case 'on_panel': {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${Math.round(size * 0.9)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('ON', 0, 0);
+            break;
+        }
+        case 'magic_circle': {
+            const circColor = magicCircleActive ? '#ffdd44' : '#666666';
+            ctx.strokeStyle = circColor;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = circColor;
+            for (let i = 0; i < 5; i++) {
+                const a = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * size * 0.35, Math.sin(a) * size * 0.35, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            break;
+        }
+        case 'coin': {
+            // Gold coin
+            ctx.fillStyle = '#ffdd00';
+            ctx.beginPath();
+            ctx.arc(0, 0, size * 0.55, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#cc9900';
+            ctx.font = `bold ${Math.round(size * 0.7)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('$', 0, 0);
+            break;
+        }
+    }
+    void midAngle; // suppress unused warning for non-arrow cases
+    void slotIndex;
+    ctx.restore();
+}
+function lightenColor(hex, amount) {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const r = Math.min(255, (num >> 16) + amount);
+    const g = Math.min(255, ((num >> 8) & 0xff) + amount);
+    const b = Math.min(255, (num & 0xff) + amount);
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+// Blend a hex color toward cyan (#00e6ff) by 'amount' (0..1)
+function blendWithCyan(hex, amount) {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const r0 = (num >> 16) & 0xff;
+    const g0 = (num >> 8) & 0xff;
+    const b0 = num & 0xff;
+    const r = Math.round(r0 + (0 - r0) * amount);
+    const g = Math.round(g0 + (230 - g0) * amount);
+    const b = Math.round(b0 + (255 - b0) * amount);
+    return `#${Math.min(255, r).toString(16).padStart(2, '0')}${Math.min(255, g).toString(16).padStart(2, '0')}${Math.min(255, b).toString(16).padStart(2, '0')}`;
+}
+// Compute the canvas pixel center of a panel at (ring, slot)
+function panelCenter(ring, slot) {
+    const innerR = ringInnerRadius(ring);
+    const outerR = ringOuterRadius(ring);
+    const arcSpan = panelArcSpan();
+    const gapRad = (ARC_GAP_DEG * Math.PI) / 180;
+    const startAngle = (slot / NUM_PANELS) * Math.PI * 2 - Math.PI / 2 + gapRad / 2;
+    const midAngle = startAngle + (arcSpan - gapRad) / 2;
+    const midR = (innerR + outerR) / 2;
+    return {
+        x: RING_CX + Math.cos(midAngle) * midR,
+        y: RING_CY + Math.sin(midAngle) * midR,
+    };
+}
+// Draw all rings with optional rotation offset for one ring
+export function drawRings(ctx, state, rotationAnim, tick, walkPath) {
+    const rings = state.rings;
+    const selectedRing = state.selectedRing;
+    const selectedColumn = state.selectedColumn;
+    const activeRingMoveStarted = state.activeRingMoveStarted;
+    const mode = state.puzzleControlMode;
+    const ringCursor = state.ringCursor;
+    const columnCursor = state.columnCursor;
+    // Build a set of highlighted path positions
+    const pathSet = new Set();
+    for (const step of walkPath) {
+        pathSet.add(`${step.ring},${step.slot}`);
+    }
+    // Column pulse effect
+    const columnPulse = 0.5 + 0.5 * Math.sin(tick * 0.005);
+    for (let r = 0; r < NUM_RINGS; r++) {
+        const ring = rings[r];
+        let rotOffset = 0;
+        if (rotationAnim && rotationAnim.ringIndex === r) {
+            const t = easeInOut(rotationAnim.progress);
+            const slotAngle = (2 * Math.PI) / NUM_PANELS;
+            rotOffset = t * slotAngle * rotationAnim.direction;
+        }
+        const isSelected = r === selectedRing;
+        for (let s = 0; s < NUM_PANELS; s++) {
+            const panel = ring.panels[s];
+            const colHighlight = s === selectedColumn && columnPulse > 0.3;
+            // In column_select, highlight the cursor column in cyan across all rings
+            const isCursorCol = (mode === 'column_select' || mode === 'column_edit') && s === columnCursor;
+            const isMarioCol = s === MARIO_SLOT;
+            const isPathPanel = pathSet.has(`${r},${s}`);
+            drawPanel(ctx, r, s, panel, RING_CX, RING_CY, rotOffset, isSelected, colHighlight || isCursorCol, isMarioCol, isPathPanel, isCursorCol, state.magicCircleActive);
+        }
+        // Selected ring glow outline
+        if (isSelected) {
+            const innerR = ringInnerRadius(r);
+            const outerR = ringOuterRadius(r);
+            if (!activeRingMoveStarted) {
+                const glowAlpha = 0.5 + 0.5 * Math.sin(tick * 0.008);
+                ctx.strokeStyle = `rgba(255,220,50,${glowAlpha})`;
+                ctx.lineWidth = 4;
+            }
+            else {
+                const glowAlpha = 0.4 + 0.4 * Math.sin(tick * 0.006);
+                ctx.strokeStyle = `rgba(255,255,255,${glowAlpha})`;
+                ctx.lineWidth = 3;
+            }
+            ctx.beginPath();
+            ctx.arc(RING_CX, RING_CY, outerR, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(RING_CX, RING_CY, innerR, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        // ring_select mode: highlight ring cursor with pulsing cyan border
+        if (mode === 'ring_select' && r === ringCursor) {
+            const innerR = ringInnerRadius(r);
+            const outerR = ringOuterRadius(r);
+            const pulse = 0.5 + 0.5 * Math.sin(tick * 0.01);
+            ctx.strokeStyle = `rgba(0,230,255,${0.5 + 0.5 * pulse})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(RING_CX, RING_CY, outerR, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(RING_CX, RING_CY, innerR, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        // ring_edit mode: solid bright white border + "EDITING" label
+        if (mode === 'ring_edit' && r === selectedRing) {
+            const innerR = ringInnerRadius(r);
+            const outerR = ringOuterRadius(r);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(RING_CX, RING_CY, outerR, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(RING_CX, RING_CY, innerR, 0, Math.PI * 2);
+            ctx.stroke();
+            // "EDITING" label above ring
+            const labelY = RING_CY - outerR - 8;
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 12px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('EDITING', RING_CX, labelY);
+        }
+    }
+    // Column highlight lines
+    if (selectedColumn >= 0) {
+        const angle = (selectedColumn / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
+        const pulseAlpha = 0.2 + 0.3 * columnPulse;
+        ctx.strokeStyle = `rgba(255,255,180,${pulseAlpha})`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(RING_CX + Math.cos(angle) * (BOSS_RADIUS + 2), RING_CY + Math.sin(angle) * (BOSS_RADIUS + 2));
+        ctx.lineTo(RING_CX + Math.cos(angle) * (BOSS_RADIUS + NUM_RINGS * RING_WIDTH - 2), RING_CY + Math.sin(angle) * (BOSS_RADIUS + NUM_RINGS * RING_WIDTH - 2));
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+    // Draw target symbols for boss 0 during primary_target and puzzle phases
+    if (state.bossIndex === 0 && state.targetedPanels.length > 0 &&
+        (state.phase === 'primary_target' || state.phase === 'puzzle')) {
+        for (const tp of state.targetedPanels) {
+            const center = panelCenter(tp.ring, tp.slot);
+            const pulse = 0.5 + 0.5 * Math.sin(tick * 0.01);
+            ctx.save();
+            ctx.strokeStyle = `rgba(255,50,50,${0.6 + 0.4 * pulse})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, 12, 0, Math.PI * 2);
+            ctx.stroke();
+            // Crosshair lines
+            ctx.beginPath();
+            ctx.moveTo(center.x - 16, center.y);
+            ctx.lineTo(center.x + 16, center.y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(center.x, center.y - 16);
+            ctx.lineTo(center.x, center.y + 16);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+    // column_select / column_edit: draw cyan highlight line for column cursor
+    if (mode === 'column_select' || mode === 'column_edit') {
+        const cursorAngle = (columnCursor / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
+        const cyanPulse = 0.6 + 0.4 * Math.sin(tick * 0.012);
+        ctx.strokeStyle = `rgba(0,230,255,${cyanPulse})`;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(RING_CX + Math.cos(cursorAngle) * (BOSS_RADIUS + 2), RING_CY + Math.sin(cursorAngle) * (BOSS_RADIUS + 2));
+        ctx.lineTo(RING_CX + Math.cos(cursorAngle) * (BOSS_RADIUS + NUM_RINGS * RING_WIDTH - 2), RING_CY + Math.sin(cursorAngle) * (BOSS_RADIUS + NUM_RINGS * RING_WIDTH - 2));
+        ctx.stroke();
+    }
+}
+function easeInOut(t) {
+    return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+// Draw the static Mario token at ring 3, slot MARIO_SLOT (used during puzzle phase)
+function drawMarioToken(ctx, tick) {
+    const slotAngle = ((MARIO_SLOT + 0.5) / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
+    const marioR = BOSS_RADIUS + 3.5 * RING_WIDTH; // midpoint of ring 3
+    const marioX = RING_CX + marioR * Math.cos(slotAngle);
+    const marioY = RING_CY + marioR * Math.sin(slotAngle);
+    // Slight bob animation
+    const bob = Math.sin(tick * 0.004) * 2;
+    drawMarioSprite(ctx, marioX, marioY + bob);
+}
+// Draw Mario sprite centered at (x, y)
+function drawMarioSprite(ctx, x, y) {
+    ctx.save();
+    ctx.translate(x, y);
+    // White outline glow
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 6;
+    // Blue body rectangle (overalls)
+    ctx.fillStyle = '#1144cc';
+    ctx.fillRect(-7, 2, 14, 9);
+    // Red shirt
+    ctx.fillStyle = '#cc2222';
+    ctx.fillRect(-6, -4, 12, 8);
+    // Skin face
+    ctx.fillStyle = '#f5c074';
+    ctx.beginPath();
+    ctx.arc(0, -9, 6, 0, Math.PI * 2);
+    ctx.fill();
+    // Red cap
+    ctx.fillStyle = '#cc2222';
+    ctx.beginPath();
+    ctx.arc(0, -12, 7, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(-7, -13, 16, 4);
+    // Eyes (dots)
+    ctx.fillStyle = '#111';
+    ctx.fillRect(-3, -11, 2, 2);
+    ctx.fillRect(1, -11, 2, 2);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+}
+// Draw Mario's walk animation during mario_walk phase
+function drawMarioWalkToken(ctx, state) {
+    const path = state.marioWalkPath;
+    if (path.length === 0)
+        return;
+    const currentStepIdx = state.marioWalkStep;
+    if (currentStepIdx >= path.length)
+        return;
+    const step = path[currentStepIdx];
+    const stepDuration = step.pauseMs > 0 ? step.pauseMs : 280;
+    // Compute current panel center
+    const currentPos = panelCenter(step.ring, step.slot);
+    // Compute previous panel center for lerp
+    let prevPos = currentPos;
+    if (currentStepIdx > 0) {
+        const prevStep = path[currentStepIdx - 1];
+        prevPos = panelCenter(prevStep.ring, prevStep.slot);
+    }
+    else {
+        // Mario starts at ring 3, marioSlot
+        prevPos = panelCenter(3, state.marioSlot);
+    }
+    // Lerp based on timer progress (move during first 70% of duration)
+    const moveFraction = Math.min(1, state.marioWalkTimer / (stepDuration * 0.7));
+    const mx = prevPos.x + (currentPos.x - prevPos.x) * moveFraction;
+    const my = prevPos.y + (currentPos.y - prevPos.y) * moveFraction;
+    // Draw already-walked steps with faded gold glow
+    for (let i = 0; i < currentStepIdx; i++) {
+        const s = path[i];
+        const pos = panelCenter(s.ring, s.slot);
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle = '#ffdd44';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+    // If pause step (heal/plus_one/double_power), draw a glowing ring
+    if (step.pauseMs > 0 && moveFraction >= 1) {
+        const glowAlpha = 0.5 + 0.5 * Math.sin(state.tick * 0.01);
+        ctx.save();
+        ctx.globalAlpha = glowAlpha;
+        ctx.strokeStyle = step.panel === 'heal' ? '#44ff88' : step.panel === 'plus_one' ? '#ff88ff' : '#ffdd00';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(mx, my, 16, 0, Math.PI * 2);
+        ctx.stroke();
+        // Show effect name
+        const labelText = step.panel === 'heal' ? 'HEAL!' : step.panel === 'plus_one' ? '+1 ATTACK!' : '×2 POWER!';
+        ctx.globalAlpha = 1;
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = step.panel === 'heal' ? '#44ff88' : step.panel === 'plus_one' ? '#ff88ff' : '#ffdd00';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.strokeText(labelText, mx, my - 18);
+        ctx.fillText(labelText, mx, my - 18);
+        ctx.restore();
+    }
+    drawMarioSprite(ctx, mx, my);
+}
+// Draw the boss in the center circle
+export function drawBossCircle(ctx, state, tick) {
+    const boss = state.boss;
+    // Background circle
+    ctx.fillStyle = '#1a1a2e';
+    ctx.beginPath();
+    ctx.arc(RING_CX, RING_CY, BOSS_RADIUS - 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Boss color ring
+    ctx.strokeStyle = boss.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(RING_CX, RING_CY, BOSS_RADIUS - 2, 0, Math.PI * 2);
+    ctx.stroke();
+    // Draw boss art
+    if (state.bossIndex === 0) {
+        drawBoss0WithPencils(ctx, RING_CX, RING_CY, BOSS_RADIUS, tick, state.pencilsAlive);
+    }
+    else {
+        const drawFn = BOSS_DRAW_FNS[state.bossIndex];
+        if (drawFn) {
+            drawFn(ctx, RING_CX, RING_CY, BOSS_RADIUS, tick);
+        }
+    }
+}
+// Draw left sidebar
+export function drawLeftSidebar(ctx, state) {
+    const boss = state.boss;
+    // Background
+    ctx.fillStyle = '#0d0d1a';
+    ctx.fillRect(0, 0, 160, CANVAS_H);
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 0, 160, CANVAS_H);
+    // Boss name
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('BOSS', 80, 30);
+    ctx.fillStyle = boss.color;
+    ctx.font = 'bold 11px monospace';
+    const nameParts = boss.name.split(' ');
+    nameParts.forEach((part, i) => {
+        ctx.fillText(part, 80, 50 + i * 16);
+    });
+    // Boss HP bar
+    const barY = 100;
+    const barW = 130;
+    const barH = 18;
+    const barX = 15;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(barX, barY, barW, barH);
+    const hpPct = Math.max(0, boss.hp / boss.maxHp);
+    const hpColor = hpPct > 0.5 ? '#44cc22' : hpPct > 0.25 ? '#ddaa00' : '#cc2222';
+    ctx.fillStyle = hpColor;
+    ctx.fillRect(barX, barY, barW * hpPct, barH);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#fff';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${boss.hp} / ${boss.maxHp}`, 80, barY + 13);
+    // Boss portrait area
+    ctx.fillStyle = '#444';
+    ctx.fillRect(15, 130, 130, 130);
+    ctx.strokeStyle = boss.color;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(15, 130, 130, 130);
+    // Draw mini boss portrait
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(15, 130, 130, 130);
+    ctx.clip();
+    const drawFn = BOSS_DRAW_FNS[state.bossIndex];
+    if (drawFn) {
+        drawFn(ctx, 80, 195, 55, Date.now());
+    }
+    ctx.restore();
+    // Turn number
+    ctx.fillStyle = '#aaa';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`TURN ${state.turnNumber}`, 80, 285);
+    // Boss attack damage
+    ctx.fillStyle = '#ff6644';
+    ctx.font = '10px monospace';
+    ctx.fillText(`ATK: ${state.boss.attack}`, 80, 305);
+    // Special ability
+    if (state.boss.special) {
+        ctx.fillStyle = '#bb88ff';
+        ctx.font = '9px monospace';
+        ctx.fillText('SPECIAL ACTIVE', 80, 325);
+    }
+}
+// Draw right sidebar
+export function drawRightSidebar(ctx, state, tick) {
+    // Background
+    ctx.fillStyle = '#0d0d1a';
+    ctx.fillRect(700, 0, 200, CANVAS_H);
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(700, 0, 200, CANVAS_H);
+    const sx = 710;
+    const sw = 180;
+    // Player HP label
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('MARIO', sx, 30);
+    // Player HP bar
+    const barY = 40;
+    const barH = 18;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(sx, barY, sw, barH);
+    const hpPct = Math.max(0, state.playerHp / state.playerMaxHp);
+    const hpColor = hpPct > 0.5 ? '#44cc22' : hpPct > 0.25 ? '#ddaa00' : '#cc2222';
+    ctx.fillStyle = hpColor;
+    ctx.fillRect(sx, barY, sw * hpPct, barH);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx, barY, sw, barH);
+    ctx.fillStyle = '#fff';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${state.playerHp} / ${state.playerMaxHp}`, sx + sw / 2, barY + 13);
+    // Moves left
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = 'bold 12px monospace';
+    ctx.fillText('RING MOVES:', sx, 82);
+    const movesColor = state.movesLeft <= 1 ? '#ff4444' : '#ffffff';
+    ctx.fillStyle = movesColor;
+    ctx.font = 'bold 28px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`×${state.movesLeft}`, sx + sw / 2, 112);
+    ctx.textAlign = 'left';
+    // Instructions — context-sensitive based on puzzle control mode
+    ctx.font = '10px monospace';
+    const instrY = 130;
+    const mode = state.phase === 'puzzle' ? state.puzzleControlMode : null;
+    let lines;
+    if (mode === 'ring_select') {
+        lines = ['--- RING SELECT ---', '↑/↓: cycle ring', 'ENTER: edit ring', 'Z: column mode', 'SHIFT: evaluate'];
+    }
+    else if (mode === 'ring_edit') {
+        lines = ['--- RING EDIT ---', '←/→: rotate ring', 'ENTER: done', '', ''];
+    }
+    else if (mode === 'column_select') {
+        lines = ['--- COL SELECT ---', '←/→: cycle col', 'ENTER: edit col', 'Z: back to rings', ''];
+    }
+    else if (mode === 'column_edit') {
+        lines = ['--- COL EDIT ---', '↑/↓: slide col', 'ENTER: done', '', ''];
+    }
+    else {
+        lines = ['--- CONTROLS ---', '↑/↓: ring cycle', '←/→: rotate/col', 'Z: mode switch', 'ENTER: confirm'];
+    }
+    lines.forEach((line, i) => {
+        ctx.fillStyle = i === 0 ? '#aaa' : '#777';
+        ctx.fillText(line, sx, instrY + i * 16);
+    });
+    // Ring indicator
+    ctx.fillStyle = '#aaa';
+    ctx.font = '11px monospace';
+    ctx.fillText(`Ring: ${state.selectedRing + 1}`, sx, 240);
+    ctx.fillText(`Col: ${state.selectedColumn + 1}`, sx + 70, 240);
+    // Phase info
+    ctx.fillStyle = '#66aaff';
+    ctx.font = 'bold 11px monospace';
+    const phaseText = {
+        puzzle: 'PUZZLE PHASE',
+        mario_walk: 'MARIO WALKING...',
+        boss_attack: 'BOSS ATTACKS!',
+        attack_choice: 'CHOOSE ATTACK!',
+        setup: 'PREPARING...',
+    };
+    const pt = phaseText[state.phase] ?? '';
+    if (pt) {
+        ctx.fillText(pt, sx, 260);
+    }
+    // Attack modifiers during mario_walk / attack_choice
+    if (state.phase === 'mario_walk' || state.phase === 'attack_choice') {
+        if (state.marioAttackCount > 1) {
+            ctx.fillStyle = '#ff88ff';
+            ctx.font = '10px monospace';
+            ctx.fillText(`ATK COUNT: ×${state.marioAttackCount}`, sx, 278);
+        }
+        if (state.marioDamageMult > 1) {
+            ctx.fillStyle = '#ffdd00';
+            ctx.font = '10px monospace';
+            ctx.fillText(`POWER: ×${state.marioDamageMult}`, sx, 294);
+        }
+    }
+    // Last damage dealt
+    if (state.lastDamageDealt > 0) {
+        ctx.fillStyle = '#ff6644';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(`Dealt: ${state.lastDamageDealt}`, sx, 312);
+    }
+    if (state.lastBossDamage > 0) {
+        ctx.fillStyle = '#ff4444';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(`Boss hit: ${state.lastBossDamage}`, sx, 330);
+    }
+    // Mushroom count
+    ctx.fillStyle = '#44ff88';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`🍄 Mushrooms: ${state.mushroomCount}  [I] to use`, sx, 350);
+    if (state.coinBonus > 0) {
+        ctx.fillStyle = '#ffdd00';
+        ctx.font = '10px monospace';
+        ctx.fillText(`Coin bonus: +${state.coinBonus}`, sx, 366);
+    }
+    void tick;
+}
+// Draw top bar with phase and timer
+export function drawTopBar(ctx, state) {
+    ctx.fillStyle = '#0a0a18';
+    ctx.fillRect(0, 0, CANVAS_W, 40);
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 0, CANVAS_W, 40);
+    // Timer bar (only during puzzle phase)
+    if (state.phase === 'puzzle') {
+        const timerPct = Math.max(0, state.puzzleTimer / state.puzzleMaxTimer);
+        const timerColor = timerPct > 0.5 ? '#44cc22' : timerPct > 0.25 ? '#ddaa00' : '#cc2222';
+        ctx.fillStyle = timerColor;
+        ctx.fillRect(170, 6, (CANVAS_W - 340) * timerPct, 10);
+        ctx.strokeStyle = '#444';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(170, 6, CANVAS_W - 340, 10);
+        const seconds = Math.ceil(state.puzzleTimer / 1000);
+        ctx.fillStyle = '#fff';
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${seconds}s`, CANVAS_W / 2, 20);
+        ctx.fillStyle = '#aaa';
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('TIME', 140, 20);
+    }
+    // Phase label
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('PAPER MARIO BOSS RUSH', CANVAS_W / 2, 35);
+    // Coins display (top-right)
+    ctx.fillStyle = '#ffdd00';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`Coins: ${state.coins}`, CANVAS_W - 8, 14);
+}
+// Draw bottom bar
+export function drawBottomBar(ctx, state) {
+    ctx.fillStyle = '#0a0a18';
+    ctx.fillRect(0, 620, CANVAS_W, 60);
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 620, CANVAS_W, 60);
+    // Ring selector indicators
+    for (let r = 0; r < NUM_RINGS; r++) {
+        const bx = 180 + r * 90;
+        const by = 635;
+        const isSelected = r === state.selectedRing;
+        ctx.fillStyle = isSelected ? '#ffffff' : '#333';
+        ctx.strokeStyle = isSelected ? '#ffdd44' : '#555';
+        ctx.lineWidth = isSelected ? 2 : 1;
+        ctx.fillRect(bx, by, 80, 34);
+        ctx.strokeRect(bx, by, 80, 34);
+        ctx.fillStyle = isSelected ? '#000' : '#aaa';
+        ctx.font = isSelected ? 'bold 12px monospace' : '11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`RING ${r + 1}`, bx + 40, by + 22);
+    }
+    // Hint text
+    const hint = getPhaseHint(state);
+    ctx.fillStyle = '#88aacc';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(hint, CANVAS_W / 2, 668);
+}
+function getPhaseHint(state) {
+    switch (state.phase) {
+        case 'puzzle': {
+            if (state.movesLeft <= 0)
+                return 'No moves left — press SHIFT to evaluate';
+            const mode = state.puzzleControlMode;
+            if (mode === 'ring_select')
+                return '↑↓: cycle ring | ENTER: select ring | Z: switch to columns | SHIFT: evaluate';
+            if (mode === 'ring_edit')
+                return '←→: rotate ring | ENTER: done';
+            if (mode === 'column_select')
+                return '←→: cycle column | ENTER: select | Z: back to rings';
+            if (mode === 'column_edit')
+                return '↑↓: slide column | ENTER: done';
+            return '';
+        }
+        case 'mario_walk':
+            return 'Mario is walking the path...';
+        case 'mario_mash':
+            return 'MASH SPACE to smash the boss! [I] for mushroom';
+        case 'boss_attack':
+        case 'pencil_rain':
+        case 'snap_shut':
+            return state.blockWindowOpen ? 'PRESS SPACE to block!' : (state.bossAttackName || 'Boss is attacking!');
+        case 'rainbow_roll_attack':
+            return state.blockWindowOpen ? 'PRESS SPACE to block the Rainbow Roll!' : 'RAINBOW ROLL — incoming!';
+        case 'attack_choice':
+            return '[J] Jump  |  [H] Hammer';
+        case 'primary_target':
+            return 'Memorize the targeted panels!';
+        case 'pencil_cutscene':
+            return 'Pencils firing at targeted panels!';
+        case 'boss_reload':
+            return state.noReloadMode ? 'Worse Case — boss is weakened!' : 'Boss is reloading pencils...';
+        case 'pencil_grab':
+            return '← → Align arms, SPACE to grip';
+        case 'save_prompt':
+            return '← → navigate   ENTER confirm';
+        default:
+            return '';
+    }
+}
+function drawSpikyBurst(ctx, x, y, scale) {
+    const spikes = 10;
+    const outer = 22 * scale;
+    const inner = 12 * scale;
+    ctx.fillStyle = '#ff1111';
+    ctx.strokeStyle = '#880000';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+        const angle = (i * Math.PI) / spikes - Math.PI / 2;
+        const r = i % 2 === 0 ? outer : inner;
+        const px = x + Math.cos(angle) * r;
+        const py = y + Math.sin(angle) * r;
+        if (i === 0)
+            ctx.moveTo(px, py);
+        else
+            ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+}
+function drawHealBurst(ctx, x, y, scale) {
+    const s = 20 * scale;
+    ctx.fillStyle = '#ff55aa';
+    ctx.strokeStyle = '#880033';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y + s * 0.35);
+    ctx.bezierCurveTo(x - s * 0.1, y - s * 0.1, x - s, y - s * 0.1, x - s * 0.5, y - s * 0.5);
+    ctx.bezierCurveTo(x - s * 0.1, y - s * 0.9, x, y - s * 0.65, x, y - s * 0.45);
+    ctx.bezierCurveTo(x, y - s * 0.65, x + s * 0.1, y - s * 0.9, x + s * 0.5, y - s * 0.5);
+    ctx.bezierCurveTo(x + s, y - s * 0.1, x + s * 0.1, y - s * 0.1, x, y + s * 0.35);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+}
+// Draw floating damage numbers
+export function drawDamageNumbers(ctx, numbers) {
+    for (const dn of numbers) {
+        ctx.save();
+        ctx.globalAlpha = dn.alpha;
+        const displayText = dn.label != null ? dn.label : String(dn.value);
+        const fontSize = Math.round(18 * dn.scale);
+        if (dn.effectType === 'damage') {
+            drawSpikyBurst(ctx, dn.x, dn.y, dn.scale);
+            ctx.font = `bold ${fontSize}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#00ccff';
+            ctx.strokeStyle = '#003366';
+            ctx.lineWidth = 3;
+            ctx.strokeText(displayText, dn.x, dn.y);
+            ctx.fillText(displayText, dn.x, dn.y);
+        }
+        else if (dn.effectType === 'heal') {
+            drawHealBurst(ctx, dn.x, dn.y, dn.scale);
+            ctx.font = `bold ${fontSize}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#00ccff';
+            ctx.strokeStyle = '#003366';
+            ctx.lineWidth = 3;
+            ctx.strokeText(displayText, dn.x, dn.y);
+            ctx.fillText(displayText, dn.x, dn.y);
+        }
+        else {
+            ctx.font = `bold ${fontSize}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = dn.color;
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.strokeText(displayText, dn.x, dn.y);
+            ctx.fillText(displayText, dn.x, dn.y);
+        }
+        ctx.restore();
+    }
+}
+// Draw flash effects
+export function drawFlashEffects(ctx, effects) {
+    for (const fx of effects) {
+        ctx.save();
+        ctx.globalAlpha = fx.alpha;
+        ctx.fillStyle = fx.color;
+        if (fx.target === 'boss') {
+            ctx.beginPath();
+            ctx.arc(RING_CX, RING_CY, BOSS_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        else {
+            ctx.fillRect(700, 0, 200, CANVAS_H);
+        }
+        ctx.restore();
+    }
+}
+function drawJumpAnimation(ctx, state) {
+    const T = state.attackAnimT;
+    // Arc: T 0→0.5 approach boss, 0.5→1.0 return
+    const approach = T < 0.5 ? T * 2 : (1 - T) * 2; // 0→1→0
+    const start = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+    const arcHeight = Math.sin(approach * Math.PI) * 55;
+    const mx = start.x + (RING_CX - start.x) * approach;
+    const my = start.y + (RING_CY - start.y) * approach - arcHeight;
+    // Arc trail
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,220,50,0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    for (let i = 0; i <= 20; i++) {
+        const ti = i / 20;
+        const app = ti < 0.5 ? ti * 2 : (1 - ti) * 2;
+        const ax = start.x + (RING_CX - start.x) * app;
+        const ay = start.y + (RING_CY - start.y) * app - Math.sin(app * Math.PI) * 55;
+        if (i === 0)
+            ctx.moveTo(ax, ay);
+        else
+            ctx.lineTo(ax, ay);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    // Impact flash at T ≈ 0.5
+    if (T >= 0.44 && T <= 0.56) {
+        const flashAlpha = (0.06 - Math.abs(T - 0.5)) / 0.06;
+        ctx.save();
+        ctx.globalAlpha = flashAlpha * 0.7;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(RING_CX, RING_CY, BOSS_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+    drawMarioSprite(ctx, mx, my);
+    // Timing instruction / result
+    ctx.save();
+    ctx.font = 'bold 15px monospace';
+    ctx.textAlign = 'center';
+    if (!state.attackTimingPressed) {
+        const blink = Math.floor(Date.now() / 400) % 2 === 0;
+        if (blink) {
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.strokeText('Press SPACE at impact!', RING_CX, RING_CY - BOSS_RADIUS - 20);
+            ctx.fillText('Press SPACE at impact!', RING_CX, RING_CY - BOSS_RADIUS - 20);
+        }
+    }
+    else {
+        ctx.fillStyle = state.attackPerfect ? '#ffdd00' : '#aaaaaa';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.font = 'bold 22px monospace';
+        const txt = state.attackPerfect ? 'PERFECT!' : 'HIT!';
+        ctx.strokeText(txt, RING_CX, RING_CY - BOSS_RADIUS - 20);
+        ctx.fillText(txt, RING_CX, RING_CY - BOSS_RADIUS - 20);
+    }
+    ctx.restore();
+}
+function drawHammerGauge(ctx, state, tick) {
+    const T = state.attackAnimT;
+    const PERFECT_START = 0.82;
+    // Gauge bar
+    const gx = 180, gy = 590, gw = 540, gh = 28;
+    ctx.fillStyle = '#222';
+    roundRect(ctx, gx, gy, gw, gh, 6);
+    ctx.fill();
+    // Gauge fill — color shifts from green to yellow to red as it approaches full
+    const fillW = gw * T;
+    const fillColor = T < 0.5 ? '#44cc22' : T < 0.82 ? '#ddaa00' : '#ff4422';
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(gx + 1, gy + 1, Math.max(0, fillW - 2), gh - 2);
+    // Perfect zone highlight
+    const pStart = gx + gw * PERFECT_START;
+    const pEnd = gx + gw;
+    const perfPulse = 0.6 + 0.4 * Math.sin(tick * 0.012);
+    ctx.fillStyle = `rgba(255,220,0,${perfPulse})`;
+    ctx.fillRect(pStart, gy + 1, pEnd - pStart - 1, gh - 2);
+    // "PERFECT ZONE" label
+    ctx.fillStyle = '#ffdd00';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('PERFECT', (pStart + pEnd) / 2, gy - 5);
+    // Gauge border
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    roundRect(ctx, gx, gy, gw, gh, 6);
+    ctx.stroke();
+    // Label
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('HAMMER POWER', CANVAS_W / 2, gy - 18);
+    // Instruction / result
+    if (!state.attackTimingPressed) {
+        const inPerfect = T >= PERFECT_START;
+        const blink = Math.floor(Date.now() / 300) % 2 === 0;
+        if (inPerfect && blink) {
+            ctx.fillStyle = '#ffdd00';
+            ctx.font = 'bold 26px monospace';
+            ctx.textAlign = 'center';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.strokeText('PRESS SPACE!', CANVAS_W / 2, 570);
+            ctx.fillText('PRESS SPACE!', CANVAS_W / 2, 570);
+        }
+        else if (!inPerfect) {
+            ctx.fillStyle = '#aaaaaa';
+            ctx.font = '14px monospace';
+            ctx.fillText('Wait for the perfect zone...', CANVAS_W / 2, 570);
+        }
+    }
+    else {
+        ctx.font = 'bold 22px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = state.attackPerfect ? '#ffdd00' : '#aaaaaa';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        const txt = state.attackPerfect ? 'PERFECT HIT!' : 'HIT!';
+        ctx.strokeText(txt, CANVAS_W / 2, 570);
+        ctx.fillText(txt, CANVAS_W / 2, 570);
+    }
+    // Mario hammer windup illustration (simple pixel art above gauge)
+    const hamX = CANVAS_W / 2;
+    const hamY = 530;
+    const chargeScale = 0.7 + T * 0.3; // grows as gauge fills
+    ctx.save();
+    ctx.translate(hamX, hamY);
+    ctx.scale(chargeScale, chargeScale);
+    // Hammer head (rectangle)
+    ctx.fillStyle = '#8b4513';
+    ctx.fillRect(-6, -28, 12, 10);
+    ctx.fillStyle = '#5c3010';
+    ctx.fillRect(-8, -30, 16, 5);
+    // Hammer handle
+    ctx.fillStyle = '#c8a060';
+    ctx.fillRect(-2, -18, 4, 18);
+    ctx.restore();
+    void tick;
+}
+function drawMashPhase(ctx, state, tick) {
+    const timeLeft = state.mashTimer / 1000;
+    const timerFrac = state.mashTimer / 5000;
+    // Countdown bar at top
+    const barX = 160, barY = 50, barW = CANVAS_W - 320, barH = 20;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(barX, barY, barW, barH);
+    const barColor = timerFrac > 0.5 ? '#44cc22' : timerFrac > 0.25 ? '#ddaa00' : '#cc2222';
+    ctx.fillStyle = barColor;
+    ctx.fillRect(barX, barY, barW * timerFrac, barH);
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${timeLeft.toFixed(1)}s`, CANVAS_W / 2, barY + 14);
+    ctx.fillStyle = '#ffaa00';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('MAGIC CIRCLE — MASH SPACE!', CANVAS_W / 2, barY - 8);
+    // Hit counter — 10 circles showing hits used
+    const circStartX = CANVAS_W / 2 - 4.5 * 24;
+    for (let i = 0; i < 10; i++) {
+        const used = i < state.mashCount;
+        const isCooldown = !used && i === state.mashCount && state.mashCooldown > 0;
+        ctx.fillStyle = used ? '#444' : isCooldown ? '#ff8800' : '#ffdd00';
+        ctx.beginPath();
+        ctx.arc(circStartX + i * 24, barY + barH + 20, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = used ? '#222' : '#888';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        if (used) {
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(circStartX + i * 24 - 5, barY + barH + 15);
+            ctx.lineTo(circStartX + i * 24 + 5, barY + barH + 25);
+            ctx.stroke();
+        }
+    }
+    // Hits remaining label
+    ctx.fillStyle = '#aaa';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${state.mashCount}/10 hits`, CANVAS_W / 2, barY + barH + 42);
+    // Total damage so far
+    if (state.mashDamageTotal > 0) {
+        ctx.fillStyle = '#ffdd00';
+        ctx.font = 'bold 20px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Total: ${state.mashDamageTotal}`, CANVAS_W / 2, RING_CY + BOSS_RADIUS + 30);
+    }
+    // MASH prompt — shows RELOADING if on cooldown, else MASH SPACE
+    const allUsed = state.mashCount >= 10;
+    if (!allUsed) {
+        if (state.mashCooldown > 0) {
+            ctx.fillStyle = '#ff8800';
+            ctx.font = 'bold 22px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('RELOADING...', CANVAS_W / 2, RING_CY - BOSS_RADIUS - 30);
+        }
+        else {
+            const blink = Math.floor(Date.now() / 200) % 2 === 0;
+            if (blink) {
+                const pulse = 0.8 + 0.2 * Math.sin(tick * 0.02);
+                ctx.globalAlpha = pulse;
+                ctx.fillStyle = '#ffdd00';
+                ctx.font = 'bold 30px monospace';
+                ctx.textAlign = 'center';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 4;
+                ctx.strokeText('MASH SPACE!!!', CANVAS_W / 2, RING_CY - BOSS_RADIUS - 30);
+                ctx.fillText('MASH SPACE!!!', CANVAS_W / 2, RING_CY - BOSS_RADIUS - 30);
+                ctx.globalAlpha = 1;
+            }
+        }
+    }
+    // Draw Mario with long reaching arms toward boss
+    const marioPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+    const marioX = marioPos.x;
+    const marioY = marioPos.y;
+    // Arm extends toward boss center
+    const armStretch = 0.5 + 0.5 * Math.sin(tick * 0.025);
+    const armEndX = marioX + (RING_CX - marioX) * armStretch;
+    const armEndY = marioY + (RING_CY - marioY) * armStretch;
+    ctx.strokeStyle = '#f5c074';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(marioX, marioY);
+    ctx.lineTo(armEndX, armEndY);
+    ctx.stroke();
+    // Fist at end
+    ctx.fillStyle = '#f5c074';
+    ctx.beginPath();
+    ctx.arc(armEndX, armEndY, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#cc2222';
+    ctx.beginPath();
+    ctx.arc(armEndX, armEndY, 4, 0, Math.PI * 2);
+    ctx.fill();
+    drawMarioSprite(ctx, marioX, marioY);
+    void tick;
+}
+// Draw attack choice overlay
+function drawAttackChoiceOverlay(ctx, state) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    const bw = 480;
+    const bh = 260;
+    const bx = CANVAS_W / 2 - bw / 2;
+    const by = CANVAS_H / 2 - bh / 2;
+    ctx.fillStyle = '#1a1a2e';
+    roundRect(ctx, bx, by, bw, bh, 12);
+    ctx.fill();
+    ctx.strokeStyle = '#ffdd44';
+    ctx.lineWidth = 2;
+    roundRect(ctx, bx, by, bw, bh, 12);
+    ctx.stroke();
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('MARIO REACHED AN ACTION PANEL!', CANVAS_W / 2, by + 38);
+    // Show attack count / power multiplier
+    const attackCount = state.marioAttackCount;
+    const damageMult = state.marioDamageMult;
+    const modParts = [];
+    if (attackCount > 1)
+        modParts.push(`ATTACK COUNT: ×${attackCount}`);
+    if (damageMult > 1)
+        modParts.push(`POWER: ×${damageMult}`);
+    if (modParts.length > 0) {
+        ctx.fillStyle = '#ff88ff';
+        ctx.font = '12px monospace';
+        ctx.fillText(modParts.join('  |  '), CANVAS_W / 2, by + 60);
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '13px monospace';
+    ctx.fillText('Choose your attack:', CANVAS_W / 2, by + 82);
+    const jumpBase = 30;
+    const hammerBase = 50;
+    const jumpTotal = Math.round(jumpBase * damageMult) * attackCount;
+    const hammerTotal = Math.round(hammerBase * damageMult) * attackCount;
+    // [J] Jump button
+    const jbx = CANVAS_W / 2 - 210;
+    const jby = by + 98;
+    const btnW = 190;
+    const btnH = 80;
+    ctx.fillStyle = '#ccaa00';
+    roundRect(ctx, jbx, jby, btnW, btnH, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#ffee44';
+    ctx.lineWidth = 2;
+    roundRect(ctx, jbx, jby, btnW, btnH, 8);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('[J] Jump', jbx + btnW / 2, jby + 32);
+    ctx.font = '12px monospace';
+    ctx.fillStyle = '#ffeeaa';
+    ctx.fillText(`${jumpBase} × ${damageMult} × ${attackCount} = ${jumpTotal}`, jbx + btnW / 2, jby + 56);
+    // [H] Hammer button
+    const hbx = CANVAS_W / 2 + 20;
+    const hby = by + 98;
+    ctx.fillStyle = '#884400';
+    roundRect(ctx, hbx, hby, btnW, btnH, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#ff8822';
+    ctx.lineWidth = 2;
+    roundRect(ctx, hbx, hby, btnW, btnH, 8);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('[H] Hammer', hbx + btnW / 2, hby + 32);
+    const hammerInRange = state.marioFinalRing <= 1;
+    ctx.font = '11px monospace';
+    ctx.fillStyle = hammerInRange ? '#ffcc88' : '#ff6666';
+    const rangeText = hammerInRange
+        ? `${hammerBase} × ${damageMult} × ${attackCount} = ${hammerTotal}`
+        : `Ring ${state.marioFinalRing + 1} — OUT OF RANGE!`;
+    ctx.fillText(rangeText, hbx + btnW / 2, hby + 56);
+    if (!hammerInRange) {
+        ctx.fillStyle = '#ff6666';
+        ctx.font = '10px monospace';
+        ctx.fillText('Must be on Ring 1 or 2!', hbx + btnW / 2, hby + 70);
+    }
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Press J for Jump or H for Hammer', CANVAS_W / 2, by + bh - 16);
+    ctx.restore();
+}
+function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+// Draw title screen
+export function drawTitleScreen(ctx, titleRingAngle) {
+    drawBgImage(ctx, _titleBg, '#0a0a18');
+    // Dark gradient overlay for readability
+    const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+    grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+    grad.addColorStop(0.5, 'rgba(0,0,0,0.25)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.65)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    // Title text
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = 'bold 52px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 6;
+    ctx.strokeText('PAPER MARIO', CANVAS_W / 2, 130);
+    ctx.fillText('PAPER MARIO', CANVAS_W / 2, 130);
+    ctx.fillStyle = '#ff4444';
+    ctx.font = 'bold 38px monospace';
+    ctx.strokeText('BOSS RUSH', CANVAS_W / 2, 180);
+    ctx.fillText('BOSS RUSH', CANVAS_W / 2, 180);
+    // Press space to start (blinking)
+    const blink = Math.floor(Date.now() / 600) % 2 === 0;
+    if (blink) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 22px monospace';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.strokeText('Press SPACE to Start', CANVAS_W / 2, CANVAS_H - 70);
+        ctx.fillText('Press SPACE to Start', CANVAS_W / 2, CANVAS_H - 70);
+    }
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = '12px monospace';
+    ctx.lineWidth = 0;
+    ctx.fillText('6 BOSSES  ·  RING PUZZLE BATTLE  ·  LEGION OF STATIONERY', CANVAS_W / 2, CANVAS_H - 35);
+    ctx.fillStyle = '#55aacc';
+    ctx.fillText('Press T for Testing Mode', CANVAS_W / 2, CANVAS_H - 15);
+    void titleRingAngle;
+}
+export function drawMainMenu(ctx, state) {
+    // Background switches based on cursor position
+    const bgImg = state.mainMenuCursor === 'shop' ? _shopBg : _menuBg;
+    drawBgImage(ctx, bgImg, state.mainMenuCursor === 'shop' ? '#8b4513' : '#cc0000');
+    // Dark overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.textAlign = 'center';
+    // Title
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = 'bold 48px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.strokeText('BOSS RUSH', CANVAS_W / 2, 110);
+    ctx.fillText('BOSS RUSH', CANVAS_W / 2, 110);
+    // Coin display
+    ctx.fillStyle = '#ffdd00';
+    ctx.font = 'bold 22px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.strokeText(`Coins: ${state.coins}`, CANVAS_W / 2, 160);
+    ctx.fillText(`Coins: ${state.coins}`, CANVAS_W / 2, 160);
+    // Menu options
+    const fightSel = state.mainMenuCursor === 'fight';
+    const restartSel = state.mainMenuCursor === 'restart';
+    const shopSel = state.mainMenuCursor === 'shop';
+    const buttons = [
+        { label: 'FIGHT', selLabel: '▶ FIGHT ◀', sel: fightSel, y: 280, color: '#cccccc', selColor: '#ffdd44' },
+        { label: 'RESTART GAME', selLabel: '▶ RESTART GAME ◀', sel: restartSel, y: 358, color: '#cccccc', selColor: '#ff8888' },
+        { label: 'SHOP', selLabel: '▶ SHOP ◀', sel: shopSel, y: 436, color: '#cccccc', selColor: '#ffdd44' },
+    ];
+    for (const btn of buttons) {
+        ctx.fillStyle = btn.sel ? `rgba(255,221,68,0.2)` : 'rgba(0,0,0,0.3)';
+        ctx.fillRect(CANVAS_W / 2 - 160, btn.y - 42, 320, 62);
+        ctx.strokeStyle = btn.sel ? btn.selColor : '#666';
+        ctx.lineWidth = btn.sel ? 3 : 1;
+        ctx.strokeRect(CANVAS_W / 2 - 160, btn.y - 42, 320, 62);
+        ctx.fillStyle = btn.sel ? btn.selColor : btn.color;
+        ctx.font = `bold ${btn.sel ? 34 : 28}px monospace`;
+        ctx.lineWidth = btn.sel ? 4 : 0;
+        if (btn.sel) {
+            ctx.strokeStyle = '#000';
+            ctx.strokeText(btn.selLabel, CANVAS_W / 2, btn.y);
+        }
+        ctx.fillText(btn.sel ? btn.selLabel : btn.label, CANVAS_W / 2, btn.y);
+    }
+    // Save data notice
+    try {
+        if (localStorage.getItem('pmBossRush')) {
+            ctx.fillStyle = '#44ff88';
+            ctx.font = '14px monospace';
+            ctx.lineWidth = 0;
+            ctx.fillText('★ Continue save found — FIGHT will resume from saved progress', CANVAS_W / 2, CANVAS_H - 60);
+        }
+    }
+    catch (_) { /* ignore */ }
+    // Instructions
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '16px monospace';
+    ctx.lineWidth = 0;
+    ctx.fillText('↑ ↓ — navigate     ENTER / SPACE — select', CANVAS_W / 2, CANVAS_H - 25);
+}
+export function drawShop(ctx, state) {
+    drawBgImage(ctx, _shopBg, '#8b4513');
+    // Left panel overlay for item list
+    ctx.fillStyle = 'rgba(10,10,30,0.72)';
+    ctx.fillRect(0, 0, 480, CANVAS_H);
+    ctx.textAlign = 'left';
+    // Shop title
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = 'bold 32px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
+    ctx.strokeText('SHOP', 24, 52);
+    ctx.fillText('SHOP', 24, 52);
+    // Coin display
+    ctx.fillStyle = '#ffdd00';
+    ctx.font = 'bold 18px monospace';
+    ctx.strokeText(`Coins: ${state.coins}`, 24, 84);
+    ctx.fillText(`Coins: ${state.coins}`, 24, 84);
+    // Item list
+    const itemH = 52;
+    const listTop = 108;
+    for (let i = 0; i < SHOP_ITEMS.length; i++) {
+        const item = SHOP_ITEMS[i];
+        const y = listTop + i * itemH;
+        const isSel = i === state.shopCursor;
+        const isMaxUp = item.key === 'maxUpHeart';
+        const owned = isMaxUp
+            ? false
+            : (state.accessories[item.key] === true);
+        const stock = isMaxUp ? state.maxUpHeartsInStock : null;
+        const canAfford = state.coins >= item.cost;
+        // Row highlight
+        if (isSel) {
+            ctx.fillStyle = 'rgba(255,221,68,0.18)';
+            ctx.fillRect(8, y - 2, 462, itemH - 4);
+            ctx.strokeStyle = '#ffdd44';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(8, y - 2, 462, itemH - 4);
+        }
+        // Cursor arrow
+        const nameColor = owned ? '#44cc66' : (isSel ? '#ffdd44' : (canAfford ? '#ffffff' : '#888888'));
+        ctx.fillStyle = nameColor;
+        ctx.font = `bold 17px monospace`;
+        const prefix = owned ? '✓ ' : (isSel ? '▶ ' : '  ');
+        ctx.lineWidth = isSel ? 2 : 0;
+        if (isSel) {
+            ctx.strokeStyle = '#000';
+            ctx.strokeText(`${prefix}${item.name}`, 18, y + 20);
+        }
+        ctx.fillText(`${prefix}${item.name}`, 18, y + 20);
+        // Cost / stock / owned label on right
+        ctx.font = '14px monospace';
+        const costStr = owned ? 'OWNED' : isMaxUp ? `${item.cost}¢  (${stock} in stock)` : `${item.cost} coins`;
+        ctx.fillStyle = owned ? '#44cc66' : (canAfford ? '#ffdd44' : '#ff6666');
+        ctx.textAlign = 'right';
+        ctx.fillText(costStr, 466, y + 20);
+        ctx.textAlign = 'left';
+        // Description
+        ctx.fillStyle = '#aaaaaa';
+        ctx.font = '13px monospace';
+        ctx.fillText(item.desc, 28, y + 38);
+    }
+    // Detail panel on the right (show selected item info)
+    const selItem = SHOP_ITEMS[state.shopCursor];
+    if (selItem) {
+        const rx = 510, rw = CANVAS_W - rx - 20;
+        ctx.fillStyle = 'rgba(10,10,30,0.7)';
+        ctx.fillRect(rx - 10, 80, rw + 10, 180);
+        ctx.strokeStyle = '#ffdd44';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rx - 10, 80, rw + 10, 180);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffdd44';
+        ctx.font = 'bold 17px monospace';
+        ctx.fillText(selItem.name, rx + rw / 2, 115);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '15px monospace';
+        ctx.fillText(selItem.desc, rx + rw / 2, 145);
+        ctx.fillStyle = '#ffdd00';
+        ctx.fillText(`Cost: ${selItem.cost} coins`, rx + rw / 2, 175);
+        if (selItem.key === 'maxUpHeart') {
+            ctx.fillStyle = '#aaaaaa';
+            ctx.font = '13px monospace';
+            ctx.fillText(`Stock: ${state.maxUpHeartsInStock}`, rx + rw / 2, 200);
+            ctx.fillText('Restocks on first boss clears', rx + rw / 2, 222);
+        }
+    }
+    // Instructions
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '14px monospace';
+    ctx.fillText('↑↓ navigate   ENTER/SPACE buy   ESC back', CANVAS_W / 2, CANVAS_H - 20);
+}
+// Draw boss intro screen
+export function drawBossIntro(ctx, state, tick) {
+    const progress = 1 - state.introTimer / 4500;
+    const alpha = Math.min(1, progress * 3);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    for (let i = 0; i < 8; i++) {
+        ctx.fillStyle = i % 2 === 0 ? state.boss.color + '22' : '#00000022';
+        ctx.fillRect(0, i * (CANVAS_H / 8), CANVAS_W, CANVAS_H / 8);
+    }
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const drawFn = BOSS_DRAW_FNS[state.bossIndex];
+    if (drawFn) {
+        drawFn(ctx, CANVAS_W / 2, CANVAS_H / 2 + 20, 90, tick);
+    }
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = state.boss.color;
+    ctx.font = 'bold 48px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.strokeText(state.boss.name, CANVAS_W / 2, CANVAS_H / 2 - 80);
+    ctx.fillText(state.boss.name, CANVAS_W / 2, CANVAS_H / 2 - 80);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '18px monospace';
+    ctx.fillText(`HP: ${state.boss.hp}  ATK: ${state.boss.attack}`, CANVAS_W / 2, CANVAS_H / 2 - 40);
+    ctx.restore();
+}
+// Draw victory screen
+export function drawVictoryScreen(ctx, confetti) {
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    for (const p of confetti) {
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.angle);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+        ctx.restore();
+    }
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = 'bold 72px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 6;
+    ctx.strokeText('YOU WIN!', CANVAS_W / 2, CANVAS_H / 2 - 30);
+    ctx.fillText('YOU WIN!', CANVAS_W / 2, CANVAS_H / 2 - 30);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '22px monospace';
+    ctx.fillText('All 3 bosses defeated!', CANVAS_W / 2, CANVAS_H / 2 + 30);
+    const blink = Math.floor(Date.now() / 600) % 2 === 0;
+    if (blink) {
+        ctx.fillStyle = '#aaffaa';
+        ctx.font = '16px monospace';
+        ctx.fillText('Press ENTER to play again', CANVAS_W / 2, CANVAS_H / 2 + 80);
+    }
+}
+// Draw game over screen
+export function drawGameOver(ctx) {
+    ctx.fillStyle = 'rgba(0,0,0,0.9)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillStyle = '#cc2222';
+    ctx.font = 'bold 64px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.strokeText('GAME OVER', CANVAS_W / 2, CANVAS_H / 2 - 20);
+    ctx.fillText('GAME OVER', CANVAS_W / 2, CANVAS_H / 2 - 20);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '18px monospace';
+    ctx.fillText('Mario has fallen...', CANVAS_W / 2, CANVAS_H / 2 + 30);
+    const blink = Math.floor(Date.now() / 600) % 2 === 0;
+    if (blink) {
+        ctx.fillStyle = '#ffaaaa';
+        ctx.font = '16px monospace';
+        ctx.fillText('Press ENTER to retry from Boss 1', CANVAS_W / 2, CANVAS_H / 2 + 70);
+    }
+}
+// Draw the boss attack projectile traveling from boss to Mario
+function drawAttackProjectile(ctx, state, tick) {
+    const t = state.attackProjectileT;
+    if (t <= 0 || t >= 1)
+        return;
+    // Mario's position (slot 8, outer ring)
+    const slotAngle = ((MARIO_SLOT + 0.5) / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
+    const marioR = BOSS_RADIUS + 3.5 * RING_WIDTH;
+    const marioX = RING_CX + marioR * Math.cos(slotAngle);
+    const marioY = RING_CY + marioR * Math.sin(slotAngle);
+    // Ease: smoothstep
+    const eased = t * t * (3 - 2 * t);
+    const px = RING_CX + (marioX - RING_CX) * eased;
+    const py = RING_CY + (marioY - RING_CY) * eased;
+    // Boss-specific color (one per boss)
+    const projColors = ['#ff4466', '#ff8800', '#ffcc00', '#cc44ff', '#22cc55', '#4488ff'];
+    const projColor = projColors[Math.min(5, state.boss.id)] ?? '#ffcc00';
+    // Glow
+    const glow = ctx.createRadialGradient(px, py, 0, px, py, 22);
+    glow.addColorStop(0, projColor);
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(px, py, 22, 0, Math.PI * 2);
+    ctx.fill();
+    // Core
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(px, py, 8, 0, Math.PI * 2);
+    ctx.fill();
+    // Trail (3 fading copies behind)
+    for (let i = 1; i <= 3; i++) {
+        const trailT = Math.max(0, eased - i * 0.07);
+        const tx = RING_CX + (marioX - RING_CX) * trailT;
+        const ty = RING_CY + (marioY - RING_CY) * trailT;
+        ctx.globalAlpha = 0.3 / i;
+        ctx.fillStyle = projColor;
+        ctx.beginPath();
+        ctx.arc(tx, ty, 7 - i, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    }
+    void tick;
+}
+// Draw the block timing UI during boss_attack / pencil_rain / snap_shut phases
+function drawBlockUI(ctx, state, tick) {
+    const BLOCK_START = state.phase === 'rainbow_roll_attack' ? 0.55 : 0.62;
+    const BLOCK_END = state.phase === 'rainbow_roll_attack' ? 0.85 : 0.88;
+    const t = state.phase === 'rainbow_roll_attack' ? state.rainbowRollAttackT : state.attackProjectileT;
+    // Timing bar at bottom
+    const barX = 200, barY = 640, barW = 500, barH = 20;
+    // Background
+    ctx.fillStyle = '#333333';
+    roundRect(ctx, barX, barY, barW, barH, 5);
+    ctx.fill();
+    // Progress fill
+    const progress = Math.min(1, t);
+    ctx.fillStyle = '#666666';
+    ctx.fillRect(barX + 1, barY + 1, (barW - 2) * progress, barH - 2);
+    // Block window highlight
+    const winStart = barX + barW * BLOCK_START;
+    const winEnd = barX + barW * BLOCK_END;
+    const pulse = 0.6 + 0.4 * Math.sin(tick * 0.01);
+    ctx.fillStyle = `rgba(0,255,100,${pulse})`;
+    ctx.fillRect(winStart, barY + 1, winEnd - winStart, barH - 2);
+    // Label
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('BLOCK TIMING', RING_CX, barY - 8);
+    // "Press SPACE!" flash when window is open and not yet blocked
+    if (state.blockWindowOpen && !state.playerBlocked) {
+        const flash = 0.5 + 0.5 * Math.sin(tick * 0.025);
+        ctx.globalAlpha = flash;
+        ctx.fillStyle = '#00ff88';
+        ctx.font = 'bold 28px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('PRESS SPACE!', RING_CX, 600);
+        ctx.globalAlpha = 1;
+    }
+    // "BLOCKED!" message if player blocked
+    if (state.playerBlocked) {
+        ctx.fillStyle = '#44ffaa';
+        ctx.font = 'bold 32px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('BLOCKED!', RING_CX, 590);
+    }
+    // Attack name at top
+    ctx.fillStyle = '#ff4444';
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'center';
+    const attackLabel = state.bossAttackName || `${state.boss.name} attacks!`;
+    ctx.fillText(attackLabel, RING_CX, 20);
+}
+function drawPrimaryTargetOverlay(_ctx, _state, _tick) {
+    // Targets shown on rings; attack name shown in corner — no overlay needed
+}
+function drawAttackNameCorner(ctx, state, tick) {
+    if (!state.bossAttackName)
+        return;
+    const label = state.bossAttackName;
+    const x = 790;
+    const y = 560;
+    const pulse = 0.85 + 0.15 * Math.sin(tick * 0.008);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = '#ff2222';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
+    ctx.strokeText(label, x, y);
+    ctx.fillText(label, x, y);
+    ctx.restore();
+}
+function drawPencilCutscene(ctx, state, tick) {
+    const blink = Math.floor(Date.now() / 200) % 2 === 0;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(160, 290, CANVAS_W - 320, 100);
+    ctx.fillStyle = blink ? '#ffdd44' : '#ff8800';
+    ctx.font = 'bold 28px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('PENCILS FIRE!', CANVAS_W / 2, 340);
+    // Show remaining targets pulsing red
+    for (const tp of state.targetedPanels) {
+        const center = panelCenter(tp.ring, tp.slot);
+        ctx.fillStyle = blink ? 'rgba(255,50,50,0.7)' : 'rgba(255,150,0,0.7)';
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, 14, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+    void tick;
+}
+function drawBossReload(ctx, state, tick) {
+    const blink = Math.floor(Date.now() / 300) % 2 === 0;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(160, 295, CANVAS_W - 320, 90);
+    ctx.fillStyle = blink ? '#44ff88' : '#22aa55';
+    ctx.font = 'bold 30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('RELOAD', CANVAS_W / 2, 350);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '14px monospace';
+    ctx.fillText('All pencils restored!', CANVAS_W / 2, 375);
+    ctx.restore();
+    void tick;
+    void state;
+}
+function drawPencilGrab(ctx, state, tick) {
+    // Zoomed view — just boss + arms, no rings/HUD
+    ctx.save();
+    ctx.fillStyle = '#000a14';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    // Draw zoomed boss (pencil case) in center
+    const bossCX = CANVAS_W / 2;
+    const bossCY = CANVAS_H / 2 - 60;
+    const zoomedRadius = BOSS_RADIUS * 2.8;
+    // Boss background
+    ctx.fillStyle = '#1a1a2e';
+    ctx.beginPath();
+    ctx.arc(bossCX, bossCY, zoomedRadius + 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = state.boss.color;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(bossCX, bossCY, zoomedRadius + 2, 0, Math.PI * 2);
+    ctx.stroke();
+    // Draw boss pencils at zoomed scale
+    drawBoss0WithPencils(ctx, bossCX, bossCY, zoomedRadius, tick, state.pencilsAlive);
+    // Mario's 1000-fold arms from bottom of canvas toward the boss
+    const marioFootX = CANVAS_W / 2;
+    const marioFootY = CANVAS_H - 30;
+    const armOffset = state.pencilGrabHandsPos * 28;
+    const handTargetX = bossCX + armOffset;
+    const handTargetY = bossCY + zoomedRadius + 20;
+    const isAligned = state.pencilGrabHandsPos === 0;
+    // Arm color pulses green when aligned
+    const armPulse = 0.8 + 0.2 * Math.sin(tick * 0.015);
+    const armColor = isAligned ? `rgba(100,255,120,${armPulse})` : '#f5c074';
+    ctx.strokeStyle = armColor;
+    ctx.lineWidth = 12;
+    ctx.lineCap = 'round';
+    // Left arm curve
+    ctx.beginPath();
+    ctx.moveTo(marioFootX - 25, marioFootY);
+    ctx.bezierCurveTo(marioFootX - 40, marioFootY - 120, handTargetX - 50, handTargetY + 80, handTargetX - 24, handTargetY);
+    ctx.stroke();
+    // Right arm curve
+    ctx.beginPath();
+    ctx.moveTo(marioFootX + 25, marioFootY);
+    ctx.bezierCurveTo(marioFootX + 40, marioFootY - 120, handTargetX + 50, handTargetY + 80, handTargetX + 24, handTargetY);
+    ctx.stroke();
+    // Fists
+    ctx.fillStyle = armColor;
+    ctx.beginPath();
+    ctx.arc(handTargetX - 24, handTargetY, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(handTargetX + 24, handTargetY, 14, 0, Math.PI * 2);
+    ctx.fill();
+    // Mini Mario body at bottom
+    drawMarioSprite(ctx, marioFootX, marioFootY - 20);
+    ctx.restore();
+    // UI overlay (not zoomed)
+    ctx.save();
+    ctx.textAlign = 'center';
+    // Title
+    ctx.fillStyle = '#ff8800';
+    ctx.font = 'bold 32px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.strokeText('1000-FOLD ARMS!', CANVAS_W / 2, 44);
+    ctx.fillText('1000-FOLD ARMS!', CANVAS_W / 2, 44);
+    // Instruction
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = '14px monospace';
+    ctx.lineWidth = 0;
+    ctx.fillText('← → Align arms over pencils, then press SPACE to grip', CANVAS_W / 2, 72);
+    // Position bar
+    const barCX = CANVAS_W / 2;
+    const barY = CANVAS_H - 90;
+    const barHalfW = 105; // 3 steps × 35px each side
+    ctx.fillStyle = '#222';
+    ctx.fillRect(barCX - barHalfW - 10, barY - 10, (barHalfW + 10) * 2, 22);
+    // Center zone highlight
+    ctx.fillStyle = isAligned ? 'rgba(100,255,120,0.4)' : 'rgba(255,255,255,0.1)';
+    ctx.fillRect(barCX - 18, barY - 8, 36, 18);
+    ctx.strokeStyle = isAligned ? '#44ff88' : '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barCX - 18, barY - 8, 36, 18);
+    // Marker
+    const markerX = barCX + state.pencilGrabHandsPos * 35;
+    ctx.fillStyle = isAligned ? '#44ff88' : '#ffdd44';
+    ctx.beginPath();
+    ctx.arc(markerX, barY + 1, 10, 0, Math.PI * 2);
+    ctx.fill();
+    // Tick marks
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    for (let i = -3; i <= 3; i++) {
+        const tx = barCX + i * 35;
+        ctx.beginPath();
+        ctx.moveTo(tx, barY - 6);
+        ctx.lineTo(tx, barY + 8);
+        ctx.stroke();
+    }
+    // Grip prompt / status
+    if (isAligned) {
+        const blink = Math.floor(Date.now() / 350) % 2 === 0;
+        if (blink) {
+            ctx.fillStyle = '#44ff88';
+            ctx.font = 'bold 26px monospace';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 4;
+            ctx.strokeText('PRESS SPACE TO GRIP!', CANVAS_W / 2, CANVAS_H - 105);
+            ctx.fillText('PRESS SPACE TO GRIP!', CANVAS_W / 2, CANVAS_H - 105);
+        }
+    }
+    else {
+        ctx.fillStyle = '#aaa';
+        ctx.font = '15px monospace';
+        ctx.lineWidth = 0;
+        ctx.fillText('Align the arms to the CENTER', CANVAS_W / 2, CANVAS_H - 105);
+    }
+    ctx.restore();
+}
+function drawRainbowSmash(ctx, state, tick) {
+    ctx.save();
+    // Overlay background
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    // Rainbow gradient title
+    const gradient = ctx.createLinearGradient(CANVAS_W / 2 - 200, 0, CANVAS_W / 2 + 200, 0);
+    gradient.addColorStop(0, '#ff0000');
+    gradient.addColorStop(0.2, '#ff8800');
+    gradient.addColorStop(0.4, '#ffff00');
+    gradient.addColorStop(0.6, '#00ff00');
+    gradient.addColorStop(0.8, '#0088ff');
+    gradient.addColorStop(1, '#ff00ff');
+    ctx.textAlign = 'center';
+    ctx.fillStyle = gradient;
+    ctx.font = 'bold 50px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 6;
+    ctx.strokeText('RAINBOW ROLL!', CANVAS_W / 2, RING_CY - 130);
+    ctx.fillText('RAINBOW ROLL!', CANVAS_W / 2, RING_CY - 130);
+    // Timer countdown
+    const timeLeft = state.rainbowSmashTimer / 1000;
+    const timerFrac = state.rainbowSmashTimer / 5000;
+    const barX = 160, barY = RING_CY - 95, barW = CANVAS_W - 320, barH = 18;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(barX, barY, barW, barH);
+    const barColor = timerFrac > 0.5 ? '#44cc22' : timerFrac > 0.25 ? '#ddaa00' : '#cc2222';
+    ctx.fillStyle = barColor;
+    ctx.fillRect(barX, barY, barW * timerFrac, barH);
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText(`${timeLeft.toFixed(1)}s`, CANVAS_W / 2, barY + 13);
+    // Smash count
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = 'bold 20px monospace';
+    ctx.fillText(`Smashes: ${state.rainbowSmashCount}`, CANVAS_W / 2, RING_CY - 45);
+    // SMASH prompt
+    if (state.rainbowSmashCooldown <= 0) {
+        const blink = Math.floor(Date.now() / 200) % 2 === 0;
+        if (blink) {
+            const pulse = 0.8 + 0.2 * Math.sin(tick * 0.02);
+            ctx.globalAlpha = pulse;
+            ctx.fillStyle = '#ffdd00';
+            ctx.font = 'bold 32px monospace';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 4;
+            ctx.strokeText('SMASH SPACE!!!', CANVAS_W / 2, RING_CY + 80);
+            ctx.fillText('SMASH SPACE!!!', CANVAS_W / 2, RING_CY + 80);
+            ctx.globalAlpha = 1;
+        }
+    }
+    else {
+        ctx.fillStyle = '#ff8800';
+        ctx.font = 'bold 20px monospace';
+        ctx.fillText('COOLDOWN...', CANVAS_W / 2, RING_CY + 80);
+    }
+    ctx.restore();
+    void tick;
+}
+function drawRainbowRollAttack(ctx, state, tick) {
+    // Draw projectile — a spiraling rainbow ball traveling from boss to Mario
+    const t = state.rainbowRollAttackT;
+    if (t <= 0 || t >= 1) {
+        // Show "PRESS SPACE to block!" overlay
+        if (t < 1) {
+            const blink = Math.floor(Date.now() / 300) % 2 === 0;
+            if (blink) {
+                ctx.save();
+                ctx.fillStyle = '#ff4444';
+                ctx.font = 'bold 22px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('RAINBOW ROLL ATTACK!', CANVAS_W / 2, 60);
+                ctx.restore();
+            }
+        }
+        return;
+    }
+    const slotAngle = ((8 + 0.5) / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
+    const marioR = BOSS_RADIUS + 3.5 * RING_WIDTH;
+    const marioX = RING_CX + marioR * Math.cos(slotAngle);
+    const marioY = RING_CY + marioR * Math.sin(slotAngle);
+    const eased = t * t * (3 - 2 * t);
+    const px = RING_CX + (marioX - RING_CX) * eased;
+    const py = RING_CY + (marioY - RING_CY) * eased;
+    // Rainbow glow
+    const rrColors = ['#ff0000', '#ff8800', '#ffff00', '#00ff00', '#0088ff', '#ff00ff'];
+    const rrGrad = ctx.createRadialGradient(px, py, 0, px, py, 36);
+    rrColors.forEach((c, i) => rrGrad.addColorStop(i / (rrColors.length - 1), c));
+    ctx.save();
+    ctx.fillStyle = rrGrad;
+    ctx.beginPath();
+    ctx.arc(px, py, 30 + 6 * Math.sin(tick * 0.03), 0, Math.PI * 2);
+    ctx.fill();
+    // White core
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(px, py, 10, 0, Math.PI * 2);
+    ctx.fill();
+    // Rainbow trail
+    for (let i = 1; i <= 4; i++) {
+        const trailT = Math.max(0, eased - i * 0.06);
+        const tx = RING_CX + (marioX - RING_CX) * trailT;
+        const ty = RING_CY + (marioY - RING_CY) * trailT;
+        ctx.globalAlpha = 0.25 / i;
+        ctx.fillStyle = rrColors[i % rrColors.length];
+        ctx.beginPath();
+        ctx.arc(tx, ty, 22 - i * 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    // Attack name
+    ctx.save();
+    ctx.textAlign = 'center';
+    const rPulse = 0.8 + 0.2 * Math.sin(tick * 0.01);
+    ctx.globalAlpha = rPulse;
+    ctx.font = 'bold 22px monospace';
+    ctx.fillStyle = '#ff4444';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
+    ctx.strokeText('RAINBOW ROLL ATTACK!', CANVAS_W / 2, 60);
+    ctx.fillText('RAINBOW ROLL ATTACK!', CANVAS_W / 2, 60);
+    ctx.globalAlpha = 1;
+    const dmgPreview = state.pencilRainCount * 4;
+    ctx.fillStyle = '#ff8800';
+    ctx.font = 'bold 15px monospace';
+    ctx.lineWidth = 0;
+    ctx.fillText(`${state.pencilRainCount} pencils × 4 dmg = ${dmgPreview} (${Math.ceil(dmgPreview / 2)} if blocked)`, CANVAS_W / 2, 82);
+    ctx.restore();
+}
+function drawSavePrompt(ctx, state) {
+    // Full overlay
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.82)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    // Panel
+    const pw = 520, ph = 260;
+    const px = CANVAS_W / 2 - pw / 2;
+    const py = CANVAS_H / 2 - ph / 2;
+    ctx.fillStyle = '#1a1a2e';
+    roundRect(ctx, px, py, pw, ph, 14);
+    ctx.fill();
+    ctx.strokeStyle = '#ffdd44';
+    ctx.lineWidth = 3;
+    roundRect(ctx, px, py, pw, ph, 14);
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    // Boss defeated badge
+    ctx.fillStyle = '#44ff88';
+    ctx.font = 'bold 18px monospace';
+    ctx.fillText(`BOSS ${state.bossIndex + 1} DEFEATED!`, CANVAS_W / 2, py + 44);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 26px monospace';
+    ctx.fillText('Save and exit?', CANVAS_W / 2, py + 86);
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = '14px monospace';
+    ctx.fillText('Your coins, accessories and progress will be saved.', CANVAS_W / 2, py + 114);
+    ctx.fillText('Returning to title will continue from the next boss.', CANVAS_W / 2, py + 134);
+    // Buttons
+    const yesSel = state.saveCursor === 'yes';
+    const noSel = state.saveCursor === 'no';
+    // YES button
+    const yBx = CANVAS_W / 2 - 220, yBy = py + 158, btnW = 180, btnH = 60;
+    ctx.fillStyle = yesSel ? 'rgba(68,255,136,0.25)' : 'rgba(0,0,0,0.3)';
+    roundRect(ctx, yBx, yBy, btnW, btnH, 8);
+    ctx.fill();
+    ctx.strokeStyle = yesSel ? '#44ff88' : '#555';
+    ctx.lineWidth = yesSel ? 3 : 1;
+    roundRect(ctx, yBx, yBy, btnW, btnH, 8);
+    ctx.stroke();
+    ctx.fillStyle = yesSel ? '#44ff88' : '#aaa';
+    ctx.font = `bold ${yesSel ? 28 : 22}px monospace`;
+    ctx.fillText(yesSel ? '▶ YES ◀' : 'YES', yBx + btnW / 2, yBy + 38);
+    // NO button
+    const nBx = CANVAS_W / 2 + 40;
+    ctx.fillStyle = noSel ? 'rgba(255,100,100,0.25)' : 'rgba(0,0,0,0.3)';
+    roundRect(ctx, nBx, yBy, btnW, btnH, 8);
+    ctx.fill();
+    ctx.strokeStyle = noSel ? '#ff6666' : '#555';
+    ctx.lineWidth = noSel ? 3 : 1;
+    roundRect(ctx, nBx, yBy, btnW, btnH, 8);
+    ctx.stroke();
+    ctx.fillStyle = noSel ? '#ff8888' : '#aaa';
+    ctx.font = `bold ${noSel ? 28 : 22}px monospace`;
+    ctx.fillText(noSel ? '▶ NO ◀' : 'NO', nBx + btnW / 2, yBy + 38);
+    ctx.fillStyle = '#666';
+    ctx.font = '13px monospace';
+    ctx.fillText('← → navigate    ENTER / SPACE confirm', CANVAS_W / 2, py + ph - 16);
+    ctx.restore();
+}
+export function drawTestingSelect(ctx, state) {
+    ctx.fillStyle = '#0a0a18';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = 'bold 30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('TESTING MODE', CANVAS_W / 2, 100);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '18px monospace';
+    ctx.fillText('Choose a boss to fight:', CANVAS_W / 2, 140);
+    const bossNames = [
+        '1 — Colored Pencils (150 HP)',
+        '2 — Rubber Band (100 HP)',
+        '3 — Hole Punch (150 HP)',
+        '4 — Tape (180 HP)',
+        '5 — Scissors (336 HP)',
+        '6 — Stapler (350 HP)',
+    ];
+    bossNames.forEach((name, i) => {
+        ctx.fillStyle = '#aaddff';
+        ctx.font = '20px monospace';
+        ctx.fillText(name, CANVAS_W / 2, 200 + i * 40);
+    });
+    ctx.fillStyle = '#888';
+    ctx.font = '14px monospace';
+    ctx.fillText('ESC — back to title', CANVAS_W / 2, CANVAS_H - 40);
+    void state;
+}
+// Main render function
+export function render(ctx, state, tick) {
+    ctx.fillStyle = '#111122';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    switch (state.phase) {
+        case 'title':
+            drawTitleScreen(ctx, state.titleRingAngle);
+            return;
+        case 'main_menu':
+            drawMainMenu(ctx, state);
+            return;
+        case 'shop':
+            drawShop(ctx, state);
+            return;
+        case 'testing_select':
+            drawTestingSelect(ctx, state);
+            return;
+        case 'boss_intro':
+            drawBossIntro(ctx, state, tick);
+            return;
+        case 'victory':
+            drawVictoryScreen(ctx, state.confettiParticles);
+            return;
+        case 'game_over':
+            drawGameOver(ctx);
+            return;
+        case 'save_prompt':
+            // Draw whatever was showing before, then overlay
+            break;
+        case 'pencil_grab':
+            // Full replacement screen (no rings shown)
+            drawPencilGrab(ctx, state, tick);
+            drawDamageNumbers(ctx, state.damageNumbers);
+            return;
+        case 'rainbow_smash':
+        case 'rainbow_roll_attack':
+            // Fall through to main game view, then overlay
+            break;
+    }
+    // Main game view
+    drawTopBar(ctx, state);
+    drawLeftSidebar(ctx, state);
+    drawRightSidebar(ctx, state, tick);
+    // Compute path preview during puzzle phase
+    const walkPath = state.phase === 'puzzle'
+        ? simulatePath(state.rings, 3, state.marioSlot, state.magicCircleActive)
+        : state.phase === 'mario_walk'
+            ? state.marioWalkPath
+            : [];
+    drawRings(ctx, state, state.rotationAnim, tick, walkPath);
+    drawBossCircle(ctx, state, tick);
+    // Mario token: static during puzzle, animated during mario_walk
+    if (state.phase === 'mario_walk') {
+        drawMarioWalkToken(ctx, state);
+    }
+    else if (state.phase === 'mario_jump') {
+        // drawn by drawJumpAnimation below
+    }
+    else if (state.phase === 'mario_mash') {
+        // drawn by drawMashPhase below
+    }
+    else if (state.phase === 'mario_hammer') {
+        // drawn by drawHammerGauge
+    }
+    else if (state.phase === 'pencil_rain' || state.phase === 'snap_shut' || state.phase === 'pencil_cutscene') {
+        // Mario stays at his final walk position
+        const marioFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+        drawMarioSprite(ctx, marioFinalPos.x, marioFinalPos.y);
+    }
+    else if (state.phase === 'rainbow_smash' || state.phase === 'rainbow_roll_attack') {
+        const marioFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+        drawMarioSprite(ctx, marioFinalPos.x, marioFinalPos.y);
+    }
+    else {
+        drawMarioToken(ctx, tick);
+    }
+    // Magic circle active indicator
+    if (state.magicCircleActive && (state.phase === 'puzzle' || state.phase === 'primary_target')) {
+        ctx.save();
+        const pulse = 0.7 + 0.3 * Math.sin(tick * 0.01);
+        ctx.globalAlpha = pulse;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffcc00';
+        ctx.font = 'bold 14px monospace';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.strokeText('★ MAGIC CIRCLE ACTIVE — reach it to activate 1000-fold arms!', CANVAS_W / 2, 60);
+        ctx.fillText('★ MAGIC CIRCLE ACTIVE — reach it to activate 1000-fold arms!', CANVAS_W / 2, 60);
+        ctx.restore();
+    }
+    // Rainbow Roll warning overlay during puzzle phase
+    if (state.bossIndex === 0 && state.rainbowRollReady && state.phase === 'puzzle') {
+        ctx.save();
+        const pulse = 0.6 + 0.4 * Math.sin(tick * 0.012);
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = '#ff8800';
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        const rrMsg = state.magicCircleActive
+            ? '⚠ RAINBOW ROLL CHARGING — magic circle is ready!'
+            : '⚠ RAINBOW ROLL CHARGING — hit ON panel, then magic circle!';
+        ctx.strokeText(rrMsg, CANVAS_W / 2, 78);
+        ctx.fillText(rrMsg, CANVAS_W / 2, 78);
+        ctx.restore();
+    }
+    drawDamageNumbers(ctx, state.damageNumbers);
+    drawFlashEffects(ctx, state.flashEffects);
+    if (state.phase === 'mario_jump') {
+        drawJumpAnimation(ctx, state);
+    }
+    if (state.phase === 'mario_hammer') {
+        drawHammerGauge(ctx, state, tick);
+    }
+    if (state.phase === 'mario_mash') {
+        drawMashPhase(ctx, state, tick);
+    }
+    drawBottomBar(ctx, state);
+    if (state.phase === 'boss_attack' || state.phase === 'snap_shut' || state.phase === 'pencil_rain') {
+        drawAttackProjectile(ctx, state, tick);
+        drawBlockUI(ctx, state, tick);
+    }
+    if (state.phase === 'rainbow_roll_attack') {
+        drawRainbowRollAttack(ctx, state, tick);
+        drawBlockUI(ctx, state, tick);
+    }
+    if (state.phase === 'primary_target') {
+        drawPrimaryTargetOverlay(ctx, state, tick);
+    }
+    if (state.phase === 'pencil_cutscene') {
+        drawPencilCutscene(ctx, state, tick);
+    }
+    if (state.phase === 'boss_reload') {
+        drawBossReload(ctx, state, tick);
+    }
+    if (state.phase === 'attack_choice') {
+        drawAttackChoiceOverlay(ctx, state);
+    }
+    if (state.phase === 'rainbow_smash') {
+        drawRainbowSmash(ctx, state, tick);
+    }
+    if (state.phase === 'save_prompt') {
+        drawSavePrompt(ctx, state);
+    }
+    // Always show current attack/action name in bottom-right corner
+    drawAttackNameCorner(ctx, state, tick);
+}
