@@ -97,20 +97,22 @@ export function drawBoss0WithPencils(
     const wobble = Math.sin(tick * 0.003 + i * 0.8) * 2;
     const pencilH = r * 0.65 + (i % 2 === 0 ? r * 0.08 : 0);
 
-    ctx.fillStyle = PENCIL_COLORS[i];
-    ctx.fillRect(px - 3, cy - r * 0.05 - pencilH + wobble, 6, pencilH);
+    // Eraser at bottom (inside case, just above base)
+    ctx.fillStyle = '#ffaacc';
+    ctx.fillRect(px - 3, cy - r * 0.05 - 5 + wobble, 6, 5);
 
-    // Tip
+    // Pencil body
+    ctx.fillStyle = PENCIL_COLORS[i];
+    ctx.fillRect(px - 3, cy - r * 0.05 - pencilH + wobble, 6, pencilH - 5);
+
+    // Tip at top, pointing up
     ctx.fillStyle = '#f5c074';
     ctx.beginPath();
     ctx.moveTo(px - 3, cy - r * 0.05 - pencilH + wobble);
     ctx.lineTo(px + 3, cy - r * 0.05 - pencilH + wobble);
     ctx.lineTo(px, cy - r * 0.05 - pencilH - 6 + wobble);
+    ctx.closePath();
     ctx.fill();
-
-    // Eraser
-    ctx.fillStyle = '#ffaacc';
-    ctx.fillRect(px - 3, cy - r * 0.05 - pencilH - 6 + wobble, 6, 5);
   }
 
   // Bolts

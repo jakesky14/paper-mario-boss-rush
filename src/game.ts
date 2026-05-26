@@ -71,7 +71,7 @@ export class Game {
       lastBossDamage: 0,
       confettiParticles: [],
       titleRingAngle: 0,
-      marioSlot: 8,
+      marioSlot: 11,
       activeRingMoveStarted: false,
       attackChoice: 'none',
       tick: 0,
@@ -88,7 +88,7 @@ export class Game {
       blockWindowOpen: false,
       playerBlocked: false,
       marioFinalRing: 3,
-      marioFinalSlot: 8,
+      marioFinalSlot: 11,
       attackAnimT: 0,
       attackTimingPressed: false,
       attackQuality: 'none' as const,
@@ -177,7 +177,7 @@ export class Game {
     this.state.lastBossDamage = 0;
     this.state.damageNumbers = [];
     this.state.flashEffects = [];
-    this.state.marioSlot = 8;
+    this.state.marioSlot = 11;
     this.state.activeRingMoveStarted = false;
     this.state.attackChoice = 'none';
     this.state.marioWalkPath = [];
@@ -759,7 +759,11 @@ export class Game {
     // If Mario's starting panel is not an arrow, turn ends immediately
     const startPanel = this.state.rings[3].panels[this.state.marioSlot];
     const isArrow = startPanel === 'arrow_up' || startPanel === 'arrow_left' || startPanel === 'arrow_right';
-    if (!isArrow) {
+    const isUsableStart = isArrow
+      || startPanel === 'action'
+      || startPanel === 'on_panel'
+      || (startPanel === 'magic_circle' && this.state.magicCircleActive);
+    if (!isUsableStart) {
       this.state.marioWalkPath = [];
       this.state.marioFinalRing = 3;
       this.state.marioFinalSlot = this.state.marioSlot;
@@ -843,7 +847,7 @@ export class Game {
   private startHammerAttack(): void {
     // Boss 0 non-stunned: must be in back columns (far side from Mario = slots around slot 2)
     if (this.state.bossIndex === 0 && !this.state.bossStunned) {
-      const caseCloseSlots = [11, 0, 1, 2, 3];
+      const caseCloseSlots = [2, 3, 4, 5];
       if (!caseCloseSlots.includes(this.state.marioFinalSlot)) {
         this.state.lastDamageDealt = 0;
         this.state.damageNumbers.push({
@@ -897,8 +901,8 @@ export class Game {
 
     if (this.state.bossIndex === 0) {
       if (!this.state.bossStunned) {
-        const backSlots = [11, 0, 1, 2, 3];
-        const frontSlots = [6, 7, 8];
+        const backSlots = [2, 3, 4, 5];
+        const frontSlots = [9, 10, 11];
         if (frontSlots.includes(this.state.marioFinalSlot) && type === 'jump') {
           const bounceDmg = this.applyGuardReduction(6);
           this.state.playerHp = Math.max(0, this.state.playerHp - bounceDmg);

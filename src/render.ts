@@ -2009,7 +2009,7 @@ function drawAttackProjectile(
 
   ctx.save();
   ctx.translate(px, py);
-  ctx.rotate(angle + Math.PI / 2); // point toward Mario
+  ctx.rotate(angle - Math.PI / 2); // tip toward Mario
 
   if (isSnapOrWorseCase) {
     // Draw pencil case (silver rectangle)

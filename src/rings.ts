@@ -47,6 +47,13 @@ export function createRings(dist: PanelDistribution): RingState[] {
     });
   }
 
+  // No action panels on the two outermost rings (rings 2 and 3)
+  for (const r of [2, 3]) {
+    for (let c = 0; c < NUM_PANELS; c++) {
+      if (rings[r].panels[c] === 'action') rings[r].panels[c] = 'empty';
+    }
+  }
+
   return rings;
 }
 
@@ -108,7 +115,7 @@ export function slideColumn(rings: RingState[], column: number, direction: 'in' 
 
 // Simulate Mario's path through the ring system
 // Mario starts at the given ring and slot, following arrow panels
-export function simulatePath(rings: RingState[], startRing = 3, startSlot = 8, magicCircleActive = false): PathStep[] {
+export function simulatePath(rings: RingState[], startRing = 3, startSlot = 11, magicCircleActive = false): PathStep[] {
   const steps: PathStep[] = [];
   let ring = startRing;
   let slot = startSlot;
@@ -142,7 +149,7 @@ export function simulatePath(rings: RingState[], startRing = 3, startSlot = 8, m
       ring++;
     } else if (panel === 'on_panel') {
       steps.push({ ring, slot, panel, pauseMs: 500 });
-      // continue in last direction (magicActive is now just cosmetic in game state)
+      magicCircleActive = true; // activate immediately so magic circles later this path are usable
       if (lastDir === 'up') { if (ring === 0) break; ring--; }
       else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
       else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }
