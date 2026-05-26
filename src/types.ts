@@ -27,6 +27,8 @@ export type Phase =
   | 'pullback'
   | 'bumper_bands'
   | 'rubber_bind'
+  | 'arms_grab'
+  | 'snapback'
   | 'trapped_snapback'
   | 'save_prompt'
   | 'victory'
@@ -181,6 +183,9 @@ export interface GameState {
   envelopeTimer: number;        // ms remaining to show envelope
   attacksRemaining: number;     // attacks left for +1 panel second hit
 
+  // Pause
+  paused: boolean;
+
   // Testing mode
   testingMode: boolean;
 
@@ -212,6 +217,7 @@ export interface GameState {
   rainbowRollCharging: boolean;     // true for the one-turn warning
   pencilGrabHandsPos: number;       // -3 to 3, hand position (0 = over pencils)
   pencilGrabGripped: boolean;       // has player pressed space to grip
+  pencilGrabMode: 'rainbow' | 'case_close'; // purpose of current pencil_grab phase
   rainbowSmashTimer: number;        // 5000ms countdown
   rainbowSmashCount: number;        // number of smashes
   rainbowSmashCooldown: number;     // 250ms between smashes
@@ -219,6 +225,14 @@ export interface GameState {
   saveCursor: 'yes' | 'no';         // which option is highlighted in save_prompt
   rainbowRollAttackT: number;       // 0..1 progress for rainbow roll attack projectile
 
+  snapbackTimer: number;       // ms for snapback approach + block window
+  snapbackT: number;           // 0..1 approach progress
+  snapbackBlocked: boolean;    // player blocked the snapback
+  armsGrabHandsPos: number;    // -3..3 hand position for boss 1 arms grab
+  armsGrabGripped: boolean;    // Space pressed to grip rubber bands
+  armsPullHeld: boolean;       // ↓ is currently held
+  armsPullT: number;           // 0..1 pull progress (charges while ↓ held)
+  armsPullDamageDealt: boolean; // whether damage was dealt this pull
   rubberBands: Array<{ring: number; slot: number; origPanel: 'arrow_up' | 'arrow_down'}>;
   rubberBandCount: number;
   rubberBandHpPerBand: number;

@@ -69,17 +69,21 @@ export function drawBoss0(ctx: CanvasRenderingContext2D, cx: number, cy: number,
 export function drawBoss0WithPencils(
   ctx: CanvasRenderingContext2D,
   cx: number, cy: number, radius: number, tick: number,
-  pencilsAlive: boolean[]
+  pencilsAlive: boolean[],
+  caseClosed = false
 ): void {
   const r = radius;
   ctx.save();
 
-  // Case base
-  ctx.fillStyle = '#cccccc';
+  // Case base — red when closed, grey otherwise
+  const caseMain = caseClosed ? '#cc2222' : '#cccccc';
+  const caseDark = caseClosed ? '#992222' : '#aaaaaa';
+  const caseBorder = caseClosed ? '#ff4444' : '#777';
+  ctx.fillStyle = caseMain;
   ctx.fillRect(cx - r * 0.68, cy - r * 0.05, r * 1.36, r * 0.44);
-  ctx.fillStyle = '#aaaaaa';
+  ctx.fillStyle = caseDark;
   ctx.fillRect(cx - r * 0.68, cy + r * 0.35, r * 1.36, r * 0.08);
-  ctx.strokeStyle = '#777';
+  ctx.strokeStyle = caseBorder;
   ctx.lineWidth = 2;
   ctx.strokeRect(cx - r * 0.68, cy - r * 0.05, r * 1.36, r * 0.44);
 

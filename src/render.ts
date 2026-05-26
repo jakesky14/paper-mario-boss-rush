@@ -717,7 +717,7 @@ export function drawBossCircle(
 
   // Draw boss art
   if (state.bossIndex === 0) {
-    drawBoss0WithPencils(ctx, RING_CX, RING_CY, BOSS_RADIUS, tick, state.pencilsAlive);
+    drawBoss0WithPencils(ctx, RING_CX, RING_CY, BOSS_RADIUS, tick, state.pencilsAlive, state.pencilCaseClosed);
   } else {
     const drawFn = BOSS_DRAW_FNS[state.bossIndex];
     if (drawFn) {
@@ -1080,6 +1080,12 @@ function getPhaseHint(state: GameState): string {
       return 'Rubber bands returning — HP being restored...';
     case 'rubber_bind':
       return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'Rubber Band is launching bands!';
+    case 'arms_grab':
+      return state.armsGrabGripped
+        ? (state.armsPullHeld ? 'Pulling... release ↓ to deal damage!' : 'Hold ↓ to pull the rubber bands!')
+        : '← → Align arms, SPACE to grip rubber bands';
+    case 'snapback':
+      return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'Rubber Band is rushing in!';
     case 'trapped_snapback':
       return state.marioTied ? "Tied up — can't move!" : 'TRAPPED SNAPBACK incoming!';
     case 'save_prompt':
@@ -1582,10 +1588,38 @@ function drawAttackChoiceOverlay(
     ctx.fillText('Must be on Ring 1 or 2!', hbx + btnW / 2, hby + 70);
   }
 
+  // Boss 0 (non-stunned) in correct column: show [F] 1000-Fold Arms option
+  const caseCloseSlots = [10, 11, 0, 1];
+  const showFoldArms = state.bossIndex === 0 && !state.bossStunned;
+  if (showFoldArms) {
+    const fbx = CANVAS_W / 2 - 75;
+    const fby = by + 190;
+    const fbW = 150;
+    const fbH = 40;
+    const inPosition = caseCloseSlots.includes(state.marioFinalSlot);
+    ctx.fillStyle = inPosition ? '#004488' : '#333344';
+    roundRect(ctx, fbx, fby, fbW, fbH, 8);
+    ctx.fill();
+    ctx.strokeStyle = inPosition ? '#44aaff' : '#555566';
+    ctx.lineWidth = 2;
+    roundRect(ctx, fbx, fby, fbW, fbH, 8);
+    ctx.stroke();
+    ctx.fillStyle = inPosition ? '#ffffff' : '#888899';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('[F] 1000-Fold Arms', fbx + fbW / 2, fby + 16);
+    ctx.font = '10px monospace';
+    ctx.fillStyle = inPosition ? '#88ccff' : '#666677';
+    ctx.fillText(inPosition ? 'Trap pencils inside case!' : 'Wrong position!', fbx + fbW / 2, fby + 30);
+  }
+
   ctx.fillStyle = '#aaaaaa';
   ctx.font = '11px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('Press J for Jump or H for Hammer', CANVAS_W / 2, by + bh - 16);
+  const hintLine = showFoldArms
+    ? 'J = Jump  |  H = Hammer  |  F = 1000-Fold Arms'
+    : 'Press J for Jump or H for Hammer';
+  ctx.fillText(hintLine, CANVAS_W / 2, by + bh - 16);
 
   // Boss 1: warn player that jump/hammer are resisted
   if (state.bossIndex === 1) {
@@ -2201,7 +2235,7 @@ function drawPencilGrab(ctx: CanvasRenderingContext2D, state: GameState, tick: n
   ctx.stroke();
 
   // Draw boss pencils at zoomed scale
-  drawBoss0WithPencils(ctx, bossCX, bossCY, zoomedRadius, tick, state.pencilsAlive);
+  drawBoss0WithPencils(ctx, bossCX, bossCY, zoomedRadius, tick, state.pencilsAlive, state.pencilCaseClosed);
 
   // Mario's 1000-fold arms from bottom of canvas toward the boss
   const marioFootX = CANVAS_W / 2;
@@ -2273,7 +2307,10 @@ function drawPencilGrab(ctx: CanvasRenderingContext2D, state: GameState, tick: n
   ctx.fillStyle = '#ffdd44';
   ctx.font = '14px monospace';
   ctx.lineWidth = 0;
-  ctx.fillText('← → Align arms over pencils, then press SPACE to grip', CANVAS_W / 2, 72);
+  const grabInstruction = state.pencilGrabMode === 'case_close'
+    ? '← → Align arms behind the case, then SPACE to slam it shut!'
+    : '← → Align arms over pencils, then press SPACE to grip';
+  ctx.fillText(grabInstruction, CANVAS_W / 2, 72);
 
   // Position bar
   const barCX = CANVAS_W / 2;
@@ -2323,6 +2360,220 @@ function drawPencilGrab(ctx: CanvasRenderingContext2D, state: GameState, tick: n
   }
 
   ctx.restore();
+}
+
+function drawArmsGrab(ctx: CanvasRenderingContext2D, state: GameState, tick: number): void {
+  ctx.save();
+  ctx.fillStyle = '#000a14';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Draw zoomed boss (rubber band) in center
+  const bossCX = CANVAS_W / 2;
+  const bossCY = CANVAS_H / 2 - 50;
+  const zoomedRadius = BOSS_RADIUS * 2.2;
+
+  ctx.fillStyle = '#1a1a2e';
+  ctx.beginPath();
+  ctx.arc(bossCX, bossCY, zoomedRadius + 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#ff8800';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(bossCX, bossCY, zoomedRadius + 2, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Boss body (orange)
+  ctx.fillStyle = '#ff8800';
+  ctx.beginPath();
+  ctx.arc(bossCX, bossCY + zoomedRadius * 0.1, zoomedRadius * 0.42, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Rubber band coils on boss (highlight where arms grab)
+  ctx.strokeStyle = '#cc6600';
+  ctx.lineWidth = 5;
+  const grabY = bossCY - zoomedRadius * 0.35;
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(bossCX - zoomedRadius * 0.4, grabY + i * 14);
+    ctx.lineTo(bossCX + zoomedRadius * 0.4, grabY + i * 14);
+    ctx.stroke();
+  }
+
+  // Mario's 1000-fold arms
+  const marioFootX = CANVAS_W / 2;
+  const marioFootY = CANVAS_H - 30;
+  const armOffset = state.armsGrabGripped ? 0 : state.armsGrabHandsPos * 28;
+  const handTargetX = bossCX + armOffset;
+  const handTargetY = bossCY + zoomedRadius * 0.5;
+
+  const isAligned = state.armsGrabHandsPos === 0;
+  const armPulse = 0.8 + 0.2 * Math.sin(tick * 0.015);
+
+  let armColor: string;
+  if (state.armsGrabGripped) {
+    // Gripped — stretch arms based on pull
+    armColor = `rgba(255,200,80,${armPulse})`;
+  } else {
+    armColor = isAligned ? `rgba(100,255,120,${armPulse})` : '#cc2222';
+  }
+
+  // Pull stretch: when pulling, hands move up toward boss
+  const pullY = state.armsGrabGripped ? handTargetY - state.armsPullT * zoomedRadius * 0.3 : handTargetY;
+
+  ctx.strokeStyle = armColor;
+  ctx.lineWidth = 12;
+  ctx.lineCap = 'round';
+
+  ctx.beginPath();
+  ctx.moveTo(marioFootX - 25, marioFootY);
+  ctx.bezierCurveTo(marioFootX - 40, marioFootY - 120, handTargetX - 50, pullY + 80, handTargetX - 24, pullY);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(marioFootX + 25, marioFootY);
+  ctx.bezierCurveTo(marioFootX + 40, marioFootY - 120, handTargetX + 50, pullY + 80, handTargetX + 24, pullY);
+  ctx.stroke();
+
+  // Fists
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(handTargetX - 24, pullY, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#cccccc';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(handTargetX + 24, pullY, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  drawMarioSprite(ctx, marioFootX, marioFootY - 20);
+  ctx.restore();
+
+  // UI overlay
+  ctx.save();
+  ctx.textAlign = 'center';
+
+  ctx.fillStyle = '#ff8800';
+  ctx.font = 'bold 32px monospace';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 5;
+  ctx.strokeText('1000-FOLD ARMS!', CANVAS_W / 2, 44);
+  ctx.fillText('1000-FOLD ARMS!', CANVAS_W / 2, 44);
+
+  if (!state.armsGrabGripped) {
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = '14px monospace';
+    ctx.lineWidth = 0;
+    ctx.fillText('← → Align over rubber bands at top, SPACE to grip', CANVAS_W / 2, 72);
+
+    // Position bar
+    const barCX = CANVAS_W / 2;
+    const barY = CANVAS_H - 90;
+    const barHalfW = 105;
+    ctx.fillStyle = '#222';
+    ctx.fillRect(barCX - barHalfW - 10, barY - 10, (barHalfW + 10) * 2, 22);
+    ctx.fillStyle = isAligned ? 'rgba(100,255,120,0.4)' : 'rgba(255,255,255,0.1)';
+    ctx.fillRect(barCX - 18, barY - 8, 36, 18);
+    ctx.strokeStyle = isAligned ? '#44ff88' : '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barCX - 18, barY - 8, 36, 18);
+    const markerX = barCX + state.armsGrabHandsPos * 35;
+    ctx.fillStyle = isAligned ? '#44ff88' : '#ffdd44';
+    ctx.beginPath();
+    ctx.arc(markerX, barY + 1, 10, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = -3; i <= 3; i++) {
+      const tx = barCX + i * 35;
+      ctx.strokeStyle = '#555';
+      ctx.beginPath();
+      ctx.moveTo(tx, barY - 6);
+      ctx.lineTo(tx, barY + 8);
+      ctx.stroke();
+    }
+
+    if (isAligned) {
+      const blink = Math.floor(Date.now() / 350) % 2 === 0;
+      if (blink) {
+        ctx.fillStyle = '#44ff88';
+        ctx.font = 'bold 26px monospace';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 4;
+        ctx.strokeText('PRESS SPACE TO GRIP!', CANVAS_W / 2, CANVAS_H - 105);
+        ctx.fillText('PRESS SPACE TO GRIP!', CANVAS_W / 2, CANVAS_H - 105);
+      }
+    } else {
+      ctx.fillStyle = '#aaa';
+      ctx.font = '15px monospace';
+      ctx.lineWidth = 0;
+      ctx.fillText('Align the arms to the CENTER', CANVAS_W / 2, CANVAS_H - 105);
+    }
+  } else {
+    // Gripped — show pull meter
+    const inRange = state.marioFinalRing <= 1;
+    ctx.fillStyle = inRange ? '#ffdd44' : '#ff8866';
+    ctx.font = '14px monospace';
+    ctx.lineWidth = 0;
+    ctx.fillText(inRange ? 'Hold ↓ to pull, release to YANK!' : 'Ring too far — barely effective!', CANVAS_W / 2, 72);
+
+    // Pull power bar
+    const barX = CANVAS_W / 2 - 100;
+    const barY2 = CANVAS_H - 90;
+    const barW = 200;
+    const barH = 20;
+    ctx.fillStyle = '#222';
+    ctx.fillRect(barX - 5, barY2 - 5, barW + 10, barH + 10);
+    ctx.fillStyle = inRange ? '#ff4444' : '#aa6633';
+    ctx.fillRect(barX, barY2, barW * state.armsPullT, barH);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY2, barW, barH);
+
+    const dmgPreview = inRange ? 20 + Math.round(state.armsPullT * 20) : 1;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText(`Pull power: ${Math.round(state.armsPullT * 100)}%  →  ~${dmgPreview} DMG`, CANVAS_W / 2, CANVAS_H - 105);
+
+    if (state.armsPullHeld) {
+      const blink = Math.floor(Date.now() / 200) % 2 === 0;
+      if (blink) {
+        ctx.fillStyle = '#ff4444';
+        ctx.font = 'bold 18px monospace';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.strokeText('PULLING...', CANVAS_W / 2, CANVAS_H - 125);
+        ctx.fillText('PULLING...', CANVAS_W / 2, CANVAS_H - 125);
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+export const PAUSE_BTN = { x: CANVAS_W - 52, y: 6, w: 46, h: 26 };
+
+function drawPauseButton(ctx: CanvasRenderingContext2D, state: GameState, tick: number): void {
+  const fightPhases = ['puzzle', 'mario_walk', 'attack_choice', 'mario_jump', 'mario_hammer',
+    'mario_mash', 'boss_attack', 'primary_target', 'pencil_cutscene', 'pencil_rain', 'snap_shut',
+    'boss_reload', 'pencil_grab', 'rainbow_smash', 'rainbow_roll_attack', 'pullback', 'bumper_bands',
+    'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback'];
+  if (!fightPhases.includes(state.phase)) return;
+  const { x, y, w, h } = PAUSE_BTN;
+  ctx.save();
+  ctx.fillStyle = state.paused ? '#ff8800' : 'rgba(40,40,40,0.8)';
+  roundRect(ctx, x, y, w, h, 5);
+  ctx.fill();
+  ctx.strokeStyle = state.paused ? '#ffdd44' : '#666';
+  ctx.lineWidth = 1;
+  roundRect(ctx, x, y, w, h, 5);
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(state.paused ? '▶ P' : '⏸ P', x + w / 2, y + h / 2);
+  ctx.restore();
+  void tick;
 }
 
 function drawRainbowSmash(ctx: CanvasRenderingContext2D, state: GameState, tick: number): void {
@@ -2413,7 +2664,7 @@ function drawRainbowRollAttack(ctx: CanvasRenderingContext2D, state: GameState, 
     return;
   }
 
-  const slotAngle = ((8 + 0.5) / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
+  const slotAngle = ((state.marioFinalSlot + 0.5) / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
   const marioR = BOSS_RADIUS + 3.5 * RING_WIDTH;
   const marioX = RING_CX + marioR * Math.cos(slotAngle);
   const marioY = RING_CY + marioR * Math.sin(slotAngle);
@@ -2625,6 +2876,52 @@ export function drawTestingSelect(ctx: CanvasRenderingContext2D, state: GameStat
   ctx.font = '14px monospace';
   ctx.fillText('ESC — back to title', CANVAS_W / 2, CANVAS_H - 40);
   void state;
+}
+
+function drawSnapbackPhase(ctx: CanvasRenderingContext2D, state: GameState, tick: number): void {
+  const t = state.snapbackT;
+  const marioTarget = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+
+  // Boss rushes from center toward Mario
+  const eased = t * t * (3 - 2 * t);
+  const bossX = RING_CX + (marioTarget.x - RING_CX) * eased * 0.7;
+  const bossY = RING_CY + (marioTarget.y - RING_CY) * eased * 0.7;
+
+  // Draw rubber band boss at rushing position
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = '#ff8800';
+  ctx.beginPath();
+  ctx.arc(bossX, bossY, 22 + 4 * Math.sin(tick * 0.04), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#cc6600';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  // Wrap line (rubber band)
+  ctx.strokeStyle = '#ffaa33';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(RING_CX, RING_CY);
+  ctx.lineTo(bossX, bossY);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // SNAPBACK label
+  const blink = Math.floor(Date.now() / 300) % 2 === 0;
+  if (blink) {
+    ctx.save();
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff6600';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
+    ctx.strokeText('SNAPBACK!', RING_CX, RING_CY - BOSS_RADIUS - 20);
+    ctx.fillText('SNAPBACK!', RING_CX, RING_CY - BOSS_RADIUS - 20);
+    ctx.restore();
+  }
+
+  void tick;
 }
 
 function drawRubberBindPhase(ctx: CanvasRenderingContext2D, state: GameState, tick: number): void {
@@ -2918,11 +3215,16 @@ export function render(
       drawPencilGrab(ctx, state, tick);
       drawDamageNumbers(ctx, state.damageNumbers);
       return;
+    case 'arms_grab':
+      drawArmsGrab(ctx, state, tick);
+      drawDamageNumbers(ctx, state.damageNumbers);
+      return;
     case 'rainbow_smash':
     case 'rainbow_roll_attack':
     case 'pullback':
     case 'bumper_bands':
     case 'rubber_bind':
+    case 'snapback':
     case 'trapped_snapback':
       // Fall through to main game view, then overlay
       break;
@@ -2963,7 +3265,7 @@ export function render(
     // Mario stays at his final walk position
     const marioFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
     drawMarioSprite(ctx, marioFinalPos.x, marioFinalPos.y);
-  } else if (state.phase === 'rainbow_smash' || state.phase === 'rainbow_roll_attack' || state.phase === 'pullback' || state.phase === 'bumper_bands' || state.phase === 'boss_attack' || state.phase === 'attack_choice' || state.phase === 'rubber_bind' || state.phase === 'trapped_snapback') {
+  } else if (state.phase === 'rainbow_smash' || state.phase === 'rainbow_roll_attack' || state.phase === 'pullback' || state.phase === 'bumper_bands' || state.phase === 'boss_attack' || state.phase === 'attack_choice' || state.phase === 'rubber_bind' || state.phase === 'snapback' || state.phase === 'trapped_snapback') {
     const marioFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
     drawMarioSprite(ctx, marioFinalPos.x, marioFinalPos.y);
   } else {
@@ -3072,7 +3374,35 @@ export function render(
     drawBlockUI(ctx, state, tick);
   }
 
+  if (state.phase === 'snapback') {
+    drawSnapbackPhase(ctx, state, tick);
+    drawBlockUI(ctx, state, tick);
+  }
+
   if (state.phase === 'trapped_snapback') {
     drawTrappedSnapback(ctx, state, tick);
+  }
+
+  // Pause button (always shown during fight phases)
+  drawPauseButton(ctx, state, tick);
+
+  // Pause overlay
+  if (state.paused) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 48px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 6;
+    ctx.strokeText('PAUSED', CANVAS_W / 2, CANVAS_H / 2 - 20);
+    ctx.fillText('PAUSED', CANVAS_W / 2, CANVAS_H / 2 - 20);
+    ctx.font = '18px monospace';
+    ctx.fillStyle = '#aaaaaa';
+    ctx.lineWidth = 0;
+    ctx.fillText('Press P to resume', CANVAS_W / 2, CANVAS_H / 2 + 30);
+    ctx.restore();
   }
 }

@@ -115,7 +115,7 @@ export function slideColumn(rings: RingState[], column: number, direction: 'in' 
 
 // Simulate Mario's path through the ring system
 // Mario starts at the given ring and slot, following arrow panels
-export function simulatePath(rings: RingState[], startRing = 3, startSlot = 11, magicCircleActive = false): PathStep[] {
+export function simulatePath(rings: RingState[], startRing = 3, startSlot = 6, magicCircleActive = false): PathStep[] {
   const steps: PathStep[] = [];
   let ring = startRing;
   let slot = startSlot;
@@ -124,7 +124,11 @@ export function simulatePath(rings: RingState[], startRing = 3, startSlot = 11, 
 
   while (true) {
     const key = `${ring},${slot}`;
-    if (visited.has(key)) break; // loop protection
+    if (visited.has(key)) {
+      // Mario looped back — show him arriving at this cell, then stop
+      steps.push({ ring, slot, panel: 'empty', pauseMs: 0 });
+      break;
+    }
     visited.add(key);
 
     const panel = rings[ring].panels[slot];
@@ -231,10 +235,10 @@ export function ensureBacksideReachable(rings: RingState[]): void {
   const needed = 4 - horizontalArrows;
   let replaced = 0;
 
-  // Find non-arrow panels to replace (skip slot 8 which is Mario's start)
+  // Find non-arrow panels to replace (skip slot 6 which is Mario's start)
   const candidates: number[] = [];
   for (let i = 0; i < NUM_PANELS; i++) {
-    if (i === 8) continue; // Mario's starting slot
+    if (i === 6) continue; // Mario's starting slot
     const p = outerRing.panels[i];
     if (p !== 'arrow_left' && p !== 'arrow_right' && p !== 'arrow_up') {
       candidates.push(i);
