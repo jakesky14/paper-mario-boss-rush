@@ -57,7 +57,10 @@ const PANEL_COLORS: Record<PanelType, string> = {
   treasure_chest: '#aa6600',
   on_panel:      '#22aa44',
   magic_circle:  '#222222',
+  arrow_down:    '#336633',
+  envelope:      '#dd6600',
   coin:          '#ffdd00',
+  rubber_band:   '#cc4400',
 };
 
 // Ring background colors — warm tones matching screenshot
@@ -287,6 +290,49 @@ function drawPanelIcon(
         ctx.arc(Math.cos(a) * size * 0.35, Math.sin(a) * size * 0.35, 2, 0, Math.PI * 2);
         ctx.fill();
       }
+      break;
+    }
+    case 'arrow_down': {
+      ctx.restore();
+      const outwardAngle = Math.atan2(y - ringCy, x - ringCx);
+      drawArrowTriangle(ctx, x, y, outwardAngle + Math.PI / 2, size * 0.9);
+      return;
+    }
+    case 'envelope': {
+      // Orange rectangle with ?
+      ctx.fillStyle = '#dd6600';
+      ctx.fillRect(-size * 0.8, -size * 0.6, size * 1.6, size * 1.0);
+      ctx.strokeStyle = '#ff9900';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(-size * 0.8, -size * 0.6, size * 1.6, size * 1.0);
+      // Flap (triangle at top)
+      ctx.fillStyle = '#ff8800';
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.8, -size * 0.6);
+      ctx.lineTo(0, -size * 0.1);
+      ctx.lineTo(size * 0.8, -size * 0.6);
+      ctx.fill();
+      // Question mark
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${Math.round(size * 0.8)}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('?', 0, size * 0.1);
+      break;
+    }
+    case 'rubber_band': {
+      // Orange rubber band ring
+      ctx.strokeStyle = '#ff8800';
+      ctx.lineWidth = size * 0.6;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+      // Highlight arc
+      ctx.strokeStyle = '#ffaa55';
+      ctx.lineWidth = size * 0.18;
+      ctx.beginPath();
+      ctx.arc(-size * 0.15, -size * 0.25, size * 0.4, Math.PI * 1.1, Math.PI * 1.7);
+      ctx.stroke();
       break;
     }
     case 'coin': {
@@ -730,6 +776,14 @@ export function drawLeftSidebar(
   ctx.textAlign = 'center';
   ctx.fillText(`${boss.hp} / ${boss.maxHp}`, 80, barY + 13);
 
+  // Boss 1: show rubber band count
+  if (state.bossIndex === 1) {
+    ctx.fillStyle = '#ff8800';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Bands: ${state.rubberBandCount}/10`, 80, barY + 32);
+  }
+
   // Boss portrait area
   ctx.fillStyle = '#444';
   ctx.fillRect(15, 130, 130, 130);
@@ -1001,7 +1055,7 @@ function getPhaseHint(state: GameState): string {
       return '';
     }
     case 'mario_walk':
-      return 'Mario is walking the path...';
+      return state.envelopeMessage ? '📨 Reading envelope...' : 'Mario is walking the path...';
     case 'mario_mash':
       return 'MASH SPACE to smash the boss! [I] for mushroom';
     case 'boss_attack':
@@ -1020,6 +1074,10 @@ function getPhaseHint(state: GameState): string {
       return state.noReloadMode ? 'Worse Case — boss is weakened!' : 'Boss is reloading pencils...';
     case 'pencil_grab':
       return '← → Align arms, SPACE to grip';
+    case 'bumper_bands':
+      return 'Rubber Band is spreading bands across the rings!';
+    case 'pullback':
+      return 'Rubber bands returning — HP being restored...';
     case 'save_prompt':
       return '← → navigate   ENTER confirm';
     default:
@@ -1185,11 +1243,13 @@ function drawJumpAnimation(ctx: CanvasRenderingContext2D, state: GameState): voi
       ctx.fillText('Press SPACE at impact!', RING_CX, RING_CY - BOSS_RADIUS - 20);
     }
   } else {
-    ctx.fillStyle = state.attackPerfect ? '#ffdd00' : '#aaaaaa';
+    const qualityText: Record<string, string> = { excellent: 'EXCELLENT!', great: 'GREAT!', nice: 'NICE!', none: 'HIT!' };
+    const txt = qualityText[state.attackQuality];
+    const qualityColor: Record<string, string> = { excellent: '#ffdd00', great: '#88ff44', nice: '#44ddff', none: '#aaaaaa' };
+    ctx.fillStyle = qualityColor[state.attackQuality];
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 3;
     ctx.font = 'bold 22px monospace';
-    const txt = state.attackPerfect ? 'PERFECT!' : 'HIT!';
     ctx.strokeText(txt, RING_CX, RING_CY - BOSS_RADIUS - 20);
     ctx.fillText(txt, RING_CX, RING_CY - BOSS_RADIUS - 20);
   }
@@ -1198,7 +1258,9 @@ function drawJumpAnimation(ctx: CanvasRenderingContext2D, state: GameState): voi
 
 function drawHammerGauge(ctx: CanvasRenderingContext2D, state: GameState, tick: number): void {
   const T = state.attackAnimT;
-  const PERFECT_START = 0.82;
+  const NICE_START = 0.62;
+  const GREAT_START = 0.76;
+  const EXCELLENT_START = 0.88;
 
   // Gauge bar
   const gx = 180, gy = 590, gw = 540, gh = 28;
@@ -1208,22 +1270,31 @@ function drawHammerGauge(ctx: CanvasRenderingContext2D, state: GameState, tick: 
 
   // Gauge fill — color shifts from green to yellow to red as it approaches full
   const fillW = gw * T;
-  const fillColor = T < 0.5 ? '#44cc22' : T < 0.82 ? '#ddaa00' : '#ff4422';
+  const fillColor = T < 0.5 ? '#44cc22' : T < EXCELLENT_START ? '#ddaa00' : '#ff4422';
   ctx.fillStyle = fillColor;
   ctx.fillRect(gx + 1, gy + 1, Math.max(0, fillW - 2), gh - 2);
 
-  // Perfect zone highlight
-  const pStart = gx + gw * PERFECT_START;
-  const pEnd = gx + gw;
+  // Quality zone highlights
   const perfPulse = 0.6 + 0.4 * Math.sin(tick * 0.012);
+  // NICE zone (cyan)
+  ctx.fillStyle = `rgba(68,200,255,${perfPulse * 0.6})`;
+  ctx.fillRect(gx + gw * NICE_START + 1, gy + 1, gw * (GREAT_START - NICE_START) - 1, gh - 2);
+  // GREAT zone (green)
+  ctx.fillStyle = `rgba(100,255,80,${perfPulse * 0.7})`;
+  ctx.fillRect(gx + gw * GREAT_START + 1, gy + 1, gw * (EXCELLENT_START - GREAT_START) - 1, gh - 2);
+  // EXCELLENT zone (gold, replaces old "PERFECT")
   ctx.fillStyle = `rgba(255,220,0,${perfPulse})`;
-  ctx.fillRect(pStart, gy + 1, pEnd - pStart - 1, gh - 2);
+  ctx.fillRect(gx + gw * EXCELLENT_START, gy + 1, gw * (1 - EXCELLENT_START) - 1, gh - 2);
 
-  // "PERFECT ZONE" label
-  ctx.fillStyle = '#ffdd00';
-  ctx.font = 'bold 11px monospace';
+  // Zone labels
+  ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('PERFECT', (pStart + pEnd) / 2, gy - 5);
+  ctx.fillStyle = '#44c8ff';
+  ctx.fillText('NICE', gx + gw * (NICE_START + (GREAT_START - NICE_START) / 2), gy - 4);
+  ctx.fillStyle = '#64ff50';
+  ctx.fillText('GREAT', gx + gw * (GREAT_START + (EXCELLENT_START - GREAT_START) / 2), gy - 4);
+  ctx.fillStyle = '#ffdd00';
+  ctx.fillText('EXCELLENT', gx + gw * (EXCELLENT_START + (1 - EXCELLENT_START) / 2), gy - 4);
 
   // Gauge border
   ctx.strokeStyle = '#666';
@@ -1239,30 +1310,32 @@ function drawHammerGauge(ctx: CanvasRenderingContext2D, state: GameState, tick: 
 
   // Instruction / result
   if (!state.attackTimingPressed) {
-    const inPerfect = T >= PERFECT_START;
+    const inAny = T >= NICE_START;
     const blink = Math.floor(Date.now() / 300) % 2 === 0;
-    if (inPerfect && blink) {
-      ctx.fillStyle = '#ffdd00';
+    if (inAny && blink) {
+      const zoneColor = T >= EXCELLENT_START ? '#ffdd00' : T >= GREAT_START ? '#88ff44' : '#44ddff';
+      ctx.fillStyle = zoneColor;
       ctx.font = 'bold 26px monospace';
       ctx.textAlign = 'center';
       ctx.strokeStyle = '#000';
       ctx.lineWidth = 3;
       ctx.strokeText('PRESS SPACE!', CANVAS_W / 2, 570);
       ctx.fillText('PRESS SPACE!', CANVAS_W / 2, 570);
-    } else if (!inPerfect) {
+    } else if (!inAny) {
       ctx.fillStyle = '#aaaaaa';
       ctx.font = '14px monospace';
-      ctx.fillText('Wait for the perfect zone...', CANVAS_W / 2, 570);
+      ctx.fillText('Wait for the quality zone...', CANVAS_W / 2, 570);
     }
   } else {
     ctx.font = 'bold 22px monospace';
     ctx.textAlign = 'center';
-    ctx.fillStyle = state.attackPerfect ? '#ffdd00' : '#aaaaaa';
+    const qualityColor2: Record<string, string> = { excellent: '#ffdd00', great: '#88ff44', nice: '#44ddff', none: '#aaaaaa' };
+    const qualityLabel: Record<string, string> = { excellent: 'EXCELLENT!', great: 'GREAT!', nice: 'NICE!', none: 'HIT!' };
+    ctx.fillStyle = qualityColor2[state.attackQuality];
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 3;
-    const txt = state.attackPerfect ? 'PERFECT HIT!' : 'HIT!';
-    ctx.strokeText(txt, CANVAS_W / 2, 570);
-    ctx.fillText(txt, CANVAS_W / 2, 570);
+    ctx.strokeText(qualityLabel[state.attackQuality], CANVAS_W / 2, 570);
+    ctx.fillText(qualityLabel[state.attackQuality], CANVAS_W / 2, 570);
   }
 
   // Mario hammer windup illustration (simple pixel art above gauge)
@@ -1307,7 +1380,8 @@ function drawMashPhase(ctx: CanvasRenderingContext2D, state: GameState, tick: nu
 
   ctx.fillStyle = '#ffaa00';
   ctx.font = 'bold 16px monospace';
-  ctx.fillText('MAGIC CIRCLE — MASH SPACE!', CANVAS_W / 2, barY - 8);
+  const mashTitle = state.bossIndex === 1 ? '1000-FOLD ARMS — SNAP THE BANDS!' : 'MAGIC CIRCLE — MASH SPACE!';
+  ctx.fillText(mashTitle, CANVAS_W / 2, barY - 8);
 
   // Hit counter — 10 circles showing hits used
   const circStartX = CANVAS_W / 2 - 4.5 * 24;
@@ -1447,10 +1521,11 @@ function drawAttackChoiceOverlay(
   ctx.font = '13px monospace';
   ctx.fillText('Choose your attack:', CANVAS_W / 2, by + 82);
 
-  const jumpBase = 30;
-  const hammerBase = 50;
-  const jumpTotal = Math.round(jumpBase * damageMult) * attackCount;
-  const hammerTotal = Math.round(hammerBase * damageMult) * attackCount;
+  const heartBonus = state.maxUpHeartsBought * 2;
+  const jumpBase = 6 + heartBonus;  // normal hit
+  const jumpMax = 9 + heartBonus;   // excellent hit
+  const hammerBase = 7 + heartBonus;
+  const hammerMax = 12 + heartBonus;
 
   // [J] Jump button
   const jbx = CANVAS_W / 2 - 210;
@@ -1472,7 +1547,7 @@ function drawAttackChoiceOverlay(
   ctx.fillText('[J] Jump', jbx + btnW / 2, jby + 32);
   ctx.font = '12px monospace';
   ctx.fillStyle = '#ffeeaa';
-  ctx.fillText(`${jumpBase} × ${damageMult} × ${attackCount} = ${jumpTotal}`, jbx + btnW / 2, jby + 56);
+  ctx.fillText(`${jumpBase}-${jumpMax} × ${damageMult} × ${attackCount}`, jbx + btnW / 2, jby + 56);
 
   // [H] Hammer button
   const hbx = CANVAS_W / 2 + 20;
@@ -1494,7 +1569,7 @@ function drawAttackChoiceOverlay(
   ctx.font = '11px monospace';
   ctx.fillStyle = hammerInRange ? '#ffcc88' : '#ff6666';
   const rangeText = hammerInRange
-    ? `${hammerBase} × ${damageMult} × ${attackCount} = ${hammerTotal}`
+    ? `${hammerBase}-${hammerMax} × ${damageMult} × ${attackCount}`
     : `Ring ${state.marioFinalRing + 1} — OUT OF RANGE!`;
   ctx.fillText(rangeText, hbx + btnW / 2, hby + 56);
   if (!hammerInRange) {
@@ -1507,6 +1582,14 @@ function drawAttackChoiceOverlay(
   ctx.font = '11px monospace';
   ctx.textAlign = 'center';
   ctx.fillText('Press J for Jump or H for Hammer', CANVAS_W / 2, by + bh - 16);
+
+  // Boss 1: warn player that jump/hammer are resisted
+  if (state.bossIndex === 1) {
+    ctx.fillStyle = '#ff8800';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚠ Rubber Band resists attacks! Use Magic Circle → 1000-Fold Arms!', CANVAS_W / 2, by + bh - 36);
+  }
 
   ctx.restore();
 }
@@ -1861,6 +1944,23 @@ export function drawGameOver(ctx: CanvasRenderingContext2D): void {
 }
 
 // Draw the boss attack projectile traveling from boss to Mario
+function drawRubberBandProjectile(ctx: CanvasRenderingContext2D, x: number, y: number, spin: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(spin);
+  ctx.beginPath();
+  ctx.arc(0, 0, 9, 0, Math.PI * 2);
+  ctx.strokeStyle = '#cc4400';
+  ctx.lineWidth = 3.5;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, Math.PI * 1.4);
+  ctx.strokeStyle = '#ff8844';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawAttackProjectile(
   ctx: CanvasRenderingContext2D,
   state: GameState,
@@ -1869,49 +1969,86 @@ function drawAttackProjectile(
   const t = state.attackProjectileT;
   if (t <= 0 || t >= 1) return;
 
-  // Mario's position (slot 8, outer ring)
-  const slotAngle = ((MARIO_SLOT + 0.5) / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
-  const marioR = BOSS_RADIUS + 3.5 * RING_WIDTH;
-  const marioX = RING_CX + marioR * Math.cos(slotAngle);
-  const marioY = RING_CY + marioR * Math.sin(slotAngle);
-
-  // Ease: smoothstep
+  const marioTarget = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+  const marioX = marioTarget.x;
+  const marioY = marioTarget.y;
   const eased = t * t * (3 - 2 * t);
+
+  // Boss 1 (Rubber Band): draw 3 rubber band projectiles in a spread
+  if (state.bossIndex === 1) {
+    const offsets = [
+      { ox: -18, oy: 0, delay: 0 },
+      { ox: 0,   oy: 0, delay: 0.08 },
+      { ox: 18,  oy: 0, delay: 0.16 },
+    ];
+    const angle = Math.atan2(marioY - RING_CY, marioX - RING_CX);
+    const perpX = -Math.sin(angle);
+    const perpY = Math.cos(angle);
+    for (const { ox, delay } of offsets) {
+      const localT = Math.max(0, Math.min(1, (t - delay) / (1 - delay)));
+      const le = localT * localT * (3 - 2 * localT);
+      const px = RING_CX + (marioX - RING_CX) * le + perpX * ox;
+      const py = RING_CY + (marioY - RING_CY) * le + perpY * ox;
+      drawRubberBandProjectile(ctx, px, py, tick * 0.05);
+    }
+    void tick;
+    return;
+  }
+
   const px = RING_CX + (marioX - RING_CX) * eased;
   const py = RING_CY + (marioY - RING_CY) * eased;
 
-  // Boss-specific color (one per boss)
-  const projColors = ['#ff4466', '#ff8800', '#ffcc00', '#cc44ff', '#22cc55', '#4488ff'];
-  const projColor = projColors[Math.min(5, state.boss.id)] ?? '#ffcc00';
+  // Direction of travel
+  const angle = Math.atan2(marioY - RING_CY, marioX - RING_CX);
 
-  // Glow
-  const glow = ctx.createRadialGradient(px, py, 0, px, py, 22);
-  glow.addColorStop(0, projColor);
-  glow.addColorStop(1, 'transparent');
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(px, py, 22, 0, Math.PI * 2);
-  ctx.fill();
+  const isSnapOrWorseCase = state.bossAttackName === 'SNAP SHUT' || state.bossAttackName === 'WORSE CASE';
 
-  // Core
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(px, py, 8, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(angle + Math.PI / 2); // point toward Mario
 
-  // Trail (3 fading copies behind)
-  for (let i = 1; i <= 3; i++) {
-    const trailT = Math.max(0, eased - i * 0.07);
-    const tx = RING_CX + (marioX - RING_CX) * trailT;
-    const ty = RING_CY + (marioY - RING_CY) * trailT;
-    ctx.globalAlpha = 0.3 / i;
-    ctx.fillStyle = projColor;
+  if (isSnapOrWorseCase) {
+    // Draw pencil case (silver rectangle)
+    ctx.fillStyle = '#cccccc';
+    ctx.fillRect(-10, -18, 20, 36);
+    ctx.fillStyle = '#aaaaaa';
+    ctx.fillRect(-10, -18, 20, 8);
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-10, -18, 20, 36);
+    // Latch
+    ctx.fillStyle = '#ffdd44';
+    ctx.fillRect(-3, -2, 6, 6);
+  } else {
+    // Draw colored pencil
+    const pencilColors = ['#ff4466', '#ff8800', '#ffcc00', '#44cc55', '#4488ff', '#cc44ff'];
+    const colorIndex = Math.floor(tick * 0.01) % pencilColors.length;
+    const pencilColor = pencilColors[colorIndex];
+
+    // Pencil body (wood)
+    ctx.fillStyle = '#f5e070';
+    ctx.fillRect(-4, -16, 8, 24);
+    // Colored tip
+    ctx.fillStyle = pencilColor;
     ctx.beginPath();
-    ctx.arc(tx, ty, 7 - i, 0, Math.PI * 2);
+    ctx.moveTo(-4, 8);
+    ctx.lineTo(4, 8);
+    ctx.lineTo(0, 18);
+    ctx.closePath();
     ctx.fill();
-    ctx.globalAlpha = 1;
+    // Eraser end
+    ctx.fillStyle = '#ffaaaa';
+    ctx.fillRect(-4, -20, 8, 6);
+    // Silver ferrule
+    ctx.fillStyle = '#cccccc';
+    ctx.fillRect(-4, -16, 8, 4);
+    // Pencil outline
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-4, -20, 8, 30);
   }
 
+  ctx.restore();
   void tick;
 }
 
@@ -2070,11 +2207,11 @@ function drawPencilGrab(ctx: CanvasRenderingContext2D, state: GameState, tick: n
   const handTargetY = bossCY + zoomedRadius + 20;
   const isAligned = state.pencilGrabHandsPos === 0;
 
-  // Arm color pulses green when aligned
+  // Arm color pulses green when aligned, red when not
   const armPulse = 0.8 + 0.2 * Math.sin(tick * 0.015);
-  const armColor = isAligned ? `rgba(100,255,120,${armPulse})` : '#f5c074';
+  const armColor = isAligned ? `rgba(100,255,120,${armPulse})` : '#cc2222';
 
-  ctx.strokeStyle = armColor;
+  ctx.strokeStyle = isAligned ? armColor : '#cc2222';
   ctx.lineWidth = 12;
   ctx.lineCap = 'round';
 
@@ -2098,14 +2235,18 @@ function drawPencilGrab(ctx: CanvasRenderingContext2D, state: GameState, tick: n
   );
   ctx.stroke();
 
-  // Fists
-  ctx.fillStyle = armColor;
+  // Fists (white gloves)
+  ctx.fillStyle = '#ffffff';
   ctx.beginPath();
   ctx.arc(handTargetX - 24, handTargetY, 14, 0, Math.PI * 2);
   ctx.fill();
+  ctx.strokeStyle = '#cccccc';
+  ctx.lineWidth = 2;
+  ctx.stroke();
   ctx.beginPath();
   ctx.arc(handTargetX + 24, handTargetY, 14, 0, Math.PI * 2);
   ctx.fill();
+  ctx.stroke();
 
   // Mini Mario body at bottom
   drawMarioSprite(ctx, marioFootX, marioFootY - 20);
@@ -2328,6 +2469,61 @@ function drawRainbowRollAttack(ctx: CanvasRenderingContext2D, state: GameState, 
   ctx.restore();
 }
 
+function drawEnvelopeOverlay(ctx: CanvasRenderingContext2D, state: GameState): void {
+  if (!state.envelopeMessage || state.envelopeTimer <= 0) return;
+  const alpha = Math.min(1, state.envelopeTimer / 500); // fade out last 500ms
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // Envelope box - orange with dark border
+  const boxW = 580, boxH = 100;
+  const boxX = CANVAS_W / 2 - boxW / 2;
+  const boxY = CANVAS_H - 160;
+
+  ctx.fillStyle = '#aa4400';
+  roundRect(ctx, boxX - 2, boxY - 2, boxW + 4, boxH + 4, 10);
+  ctx.fill();
+
+  ctx.fillStyle = '#ff8800';
+  roundRect(ctx, boxX, boxY, boxW, boxH, 8);
+  ctx.fill();
+
+  ctx.strokeStyle = '#ffcc44';
+  ctx.lineWidth = 2;
+  roundRect(ctx, boxX, boxY, boxW, boxH, 8);
+  ctx.stroke();
+
+  // Envelope icon
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 22px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('✉', boxX + 14, boxY + 34);
+
+  // Message text - wrap if needed
+  ctx.font = '14px monospace';
+  ctx.fillStyle = '#fff8e8';
+  ctx.textAlign = 'left';
+  // Simple word wrap
+  const words = state.envelopeMessage.split(' ');
+  let line = '';
+  let lineY = boxY + 28;
+  const maxW = boxW - 60;
+  for (const word of words) {
+    const test = line + (line ? ' ' : '') + word;
+    if (ctx.measureText(test).width > maxW && line) {
+      ctx.fillText(line, boxX + 44, lineY);
+      line = word;
+      lineY += 20;
+    } else {
+      line = test;
+    }
+  }
+  if (line) ctx.fillText(line, boxX + 44, lineY);
+
+  ctx.restore();
+}
+
 function drawSavePrompt(ctx: CanvasRenderingContext2D, state: GameState): void {
   // Full overlay
   ctx.save();
@@ -2427,6 +2623,123 @@ export function drawTestingSelect(ctx: CanvasRenderingContext2D, state: GameStat
   void state;
 }
 
+function drawBumperBands(ctx: CanvasRenderingContext2D, state: GameState): void {
+  // progress 0=start, 1=done (pullbackTimer counts down from 2500)
+  const totalDur = 2500;
+  const progress = 1 - state.pullbackTimer / totalDur;
+
+  // Draw each rubber band flying from boss center to its target panel position
+  const bands = state.rubberBands;
+  if (bands.length === 0) return;
+
+  for (let i = 0; i < bands.length; i++) {
+    // Stagger: band i starts at i/bands.length * 0.5 into the animation
+    const staggerStart = (i / bands.length) * 0.5;
+    const localT = Math.max(0, Math.min(1, (progress - staggerStart) / 0.6));
+
+    if (localT <= 0) continue;
+
+    const target = panelCenter(bands[i].ring, bands[i].slot);
+
+    // Ease out cubic
+    const eased = 1 - Math.pow(1 - localT, 3);
+
+    const x = RING_CX + (target.x - RING_CX) * eased;
+    const y = RING_CY + (target.y - RING_CY) * eased;
+
+    // Draw a rubber band circle (orange ring)
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = '#cc4400';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 1.5);
+    ctx.strokeStyle = '#ff8844';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Text overlay
+  const blink = Math.floor(Date.now() / 300) % 2 === 0;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(150, 290, CANVAS_W - 300, 100);
+  ctx.fillStyle = blink ? '#ff6600' : '#ffaa44';
+  ctx.font = 'bold 28px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('BUMPER BANDS!', CANVAS_W / 2, 335);
+  ctx.fillStyle = '#ffdd88';
+  ctx.font = '13px monospace';
+  ctx.fillText('Rubber Band is launching bands onto the rings!', CANVAS_W / 2, 360);
+  ctx.fillText(`${state.rubberBandCount} bands active — use 1000-Fold Arms!`, CANVAS_W / 2, 378);
+  ctx.restore();
+}
+
+function drawPullback(ctx: CanvasRenderingContext2D, state: GameState, tick: number): void {
+  const totalDur = 1200;
+  // progress 0=start, 1=done
+  const progress = 1 - state.pullbackTimer / totalDur;
+
+  // Animate each rubber band flying from its panel back to the boss center
+  const bands = state.rubberBands;
+  for (let i = 0; i < bands.length; i++) {
+    const staggerStart = (i / Math.max(bands.length, 1)) * 0.4;
+    const localT = Math.max(0, Math.min(1, (progress - staggerStart) / 0.65));
+    if (localT <= 0) continue;
+    const eased = 1 - Math.pow(1 - localT, 3);
+    const src = panelCenter(bands[i].ring, bands[i].slot);
+    const x = src.x + (RING_CX - src.x) * eased;
+    const y = src.y + (RING_CY - src.y) * eased;
+    drawRubberBandProjectile(ctx, x, y, tick * 0.04 + i);
+  }
+
+  // HP restored indicator: show heart with blue number (appears after progress > 0.5)
+  if (progress > 0.5) {
+    const healedHp = state.rubberBandCount * state.rubberBandHpPerBand;
+    const heartAlpha = Math.min(1, (progress - 0.5) * 4);
+    ctx.save();
+    ctx.globalAlpha = heartAlpha;
+    // Heart shape at boss center
+    const hx = RING_CX;
+    const hy = RING_CY - BOSS_RADIUS - 30;
+    ctx.fillStyle = '#ff4466';
+    ctx.beginPath();
+    ctx.moveTo(hx, hy + 8);
+    ctx.bezierCurveTo(hx, hy, hx - 16, hy, hx - 16, hy + 8);
+    ctx.bezierCurveTo(hx - 16, hy + 20, hx, hy + 28, hx, hy + 36);
+    ctx.bezierCurveTo(hx, hy + 28, hx + 16, hy + 20, hx + 16, hy + 8);
+    ctx.bezierCurveTo(hx + 16, hy, hx, hy, hx, hy + 8);
+    ctx.fill();
+    ctx.strokeStyle = '#880022';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // HP number in blue inside heart
+    ctx.fillStyle = '#44aaff';
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`+${healedHp}`, hx, hy + 24);
+    ctx.restore();
+  }
+
+  // Text overlay
+  const blink = Math.floor(Date.now() / 250) % 2 === 0;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(160, 295, CANVAS_W - 320, 90);
+  ctx.fillStyle = blink ? '#ff8800' : '#ffaa44';
+  ctx.font = 'bold 30px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('PULLBACK!', CANVAS_W / 2, 345);
+  ctx.fillStyle = '#ffdd88';
+  ctx.font = '14px monospace';
+  ctx.fillText('Rubber bands return...', CANVAS_W / 2, 372);
+  ctx.restore();
+  void tick;
+}
+
 // Main render function
 export function render(
   ctx: CanvasRenderingContext2D,
@@ -2468,6 +2781,8 @@ export function render(
       return;
     case 'rainbow_smash':
     case 'rainbow_roll_attack':
+    case 'pullback':
+    case 'bumper_bands':
       // Fall through to main game view, then overlay
       break;
   }
@@ -2507,7 +2822,7 @@ export function render(
     // Mario stays at his final walk position
     const marioFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
     drawMarioSprite(ctx, marioFinalPos.x, marioFinalPos.y);
-  } else if (state.phase === 'rainbow_smash' || state.phase === 'rainbow_roll_attack') {
+  } else if (state.phase === 'rainbow_smash' || state.phase === 'rainbow_roll_attack' || state.phase === 'pullback' || state.phase === 'bumper_bands') {
     const marioFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
     drawMarioSprite(ctx, marioFinalPos.x, marioFinalPos.y);
   } else {
@@ -2548,6 +2863,7 @@ export function render(
   }
 
   drawDamageNumbers(ctx, state.damageNumbers);
+  drawEnvelopeOverlay(ctx, state);
   drawFlashEffects(ctx, state.flashEffects);
 
   if (state.phase === 'mario_jump') {
@@ -2598,4 +2914,12 @@ export function render(
 
   // Always show current attack/action name in bottom-right corner
   drawAttackNameCorner(ctx, state, tick);
+
+  if (state.phase === 'pullback') {
+    drawPullback(ctx, state, tick);
+  }
+
+  if (state.phase === 'bumper_bands') {
+    drawBumperBands(ctx, state);
+  }
 }

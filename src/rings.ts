@@ -16,11 +16,25 @@ export function createRings(dist: PanelDistribution): RingState[] {
   for (let i = 0; i < dist.treasure_chest; i++) pool.push('treasure_chest');
   for (let i = 0; i < dist.on_panel; i++) pool.push('on_panel');
   for (let i = 0; i < dist.magic_circle; i++) pool.push('magic_circle');
+  for (let i = 0; i < dist.arrow_down; i++) pool.push('arrow_down');
+  for (let i = 0; i < dist.envelope; i++) pool.push('envelope');
   for (let i = 0; i < dist.empty; i++) pool.push('empty');
 
   // Pad or trim to exactly 48 panels (4 rings * 12)
   const total = NUM_RINGS * NUM_PANELS;
   while (pool.length < total) pool.push('empty');
+
+  // Enforce max 1 of each special panel per run
+  const limitedPanels: PanelType[] = ['double_power', 'plus_one', 'treasure_chest', 'on_panel', 'envelope'];
+  for (const sp of limitedPanels) {
+    let found = false;
+    for (let i = 0; i < pool.length; i++) {
+      if (pool[i] === sp) {
+        if (found) pool[i] = 'empty';
+        else found = true;
+      }
+    }
+  }
 
   // Shuffle
   shuffleArray(pool);
@@ -63,28 +77,32 @@ export function rotateRing(ring: RingState, direction: 1 | -1): void {
   }
 }
 
-// Slide a column (same slot index across all 4 rings) inward or outward by 1.
-// Also slides the diametrically opposite column (column + 6) % 12.
-// 'in': outer->inner shift (ring3 panel goes to ring2, ring2 to ring1, ring1 to ring0, ring0 wraps to ring3)
-// 'out': inner->outer shift (ring0 panel goes to ring1, ring1 to ring2, ring2 to ring3, ring3 wraps to ring0)
+// Slide a column: cycles all 8 panels (4 rings on slot `column` + 4 rings on opposite slot `column+6`)
+// as a single chain. Inward on one side connects to outward on the opposite side.
+// 'in': chain moves ring3[col]→ring2[col]→ring1[col]→ring0[col]→ring0[opp]→ring1[opp]→ring2[opp]→ring3[opp]→ring3[col]
+// 'out': reverse of the above
 export function slideColumn(rings: RingState[], column: number, direction: 'in' | 'out'): void {
-  slideOneColumn(rings, column, direction);
-  slideOneColumn(rings, (column + 6) % 12, direction);
-}
-
-function slideOneColumn(rings: RingState[], column: number, direction: 'in' | 'out'): void {
+  const opp = (column + 6) % 12;
   if (direction === 'in') {
-    const inner = rings[0].panels[column];
+    const saved = rings[0].panels[column];
     rings[0].panels[column] = rings[1].panels[column];
     rings[1].panels[column] = rings[2].panels[column];
     rings[2].panels[column] = rings[3].panels[column];
-    rings[3].panels[column] = inner;
+    rings[3].panels[column] = rings[3].panels[opp];
+    rings[3].panels[opp] = rings[2].panels[opp];
+    rings[2].panels[opp] = rings[1].panels[opp];
+    rings[1].panels[opp] = rings[0].panels[opp];
+    rings[0].panels[opp] = saved;
   } else {
-    const outer = rings[3].panels[column];
+    const saved = rings[3].panels[column];
     rings[3].panels[column] = rings[2].panels[column];
     rings[2].panels[column] = rings[1].panels[column];
     rings[1].panels[column] = rings[0].panels[column];
-    rings[0].panels[column] = outer;
+    rings[0].panels[column] = rings[0].panels[opp];
+    rings[0].panels[opp] = rings[1].panels[opp];
+    rings[1].panels[opp] = rings[2].panels[opp];
+    rings[2].panels[opp] = rings[3].panels[opp];
+    rings[3].panels[opp] = saved;
   }
 }
 
@@ -94,7 +112,7 @@ export function simulatePath(rings: RingState[], startRing = 3, startSlot = 8, m
   const steps: PathStep[] = [];
   let ring = startRing;
   let slot = startSlot;
-  let lastDir: 'up' | 'left' | 'right' = 'up'; // Mario initially faces inward
+  let lastDir: 'up' | 'down' | 'left' | 'right' = 'up'; // Mario initially faces inward
   const visited = new Set<string>();
 
   while (true) {
@@ -117,10 +135,16 @@ export function simulatePath(rings: RingState[], startRing = 3, startSlot = 8, m
       steps.push({ ring, slot, panel, pauseMs: 0 });
       lastDir = 'right';
       slot = (slot + 1) % 12;
+    } else if (panel === 'arrow_down') {
+      steps.push({ ring, slot, panel, pauseMs: 0 });
+      lastDir = 'down';
+      if (ring === NUM_RINGS - 1) break; // can't go further out
+      ring++;
     } else if (panel === 'on_panel') {
       steps.push({ ring, slot, panel, pauseMs: 500 });
       // continue in last direction (magicActive is now just cosmetic in game state)
       if (lastDir === 'up') { if (ring === 0) break; ring--; }
+      else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
       else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }
       else { slot = (slot + 1) % 12; }
     } else if (panel === 'magic_circle') {
@@ -132,6 +156,7 @@ export function simulatePath(rings: RingState[], startRing = 3, startSlot = 8, m
         // Inactive — Mario passes through in last direction
         steps.push({ ring, slot, panel: 'empty', pauseMs: 0 });
         if (lastDir === 'up') { if (ring === 0) break; ring--; }
+        else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
         else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }
         else { slot = (slot + 1) % 12; }
       }
@@ -139,18 +164,38 @@ export function simulatePath(rings: RingState[], startRing = 3, startSlot = 8, m
       steps.push({ ring, slot, panel, pauseMs: 800 });
       // continue in last direction
       if (lastDir === 'up') { if (ring === 0) break; ring--; }
+      else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
       else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }
       else { slot = (slot + 1) % 12; }
     } else if (panel === 'heal' || panel === 'coin') {
       steps.push({ ring, slot, panel, pauseMs: 600 });
       if (lastDir === 'up') { if (ring === 0) break; ring--; }
+      else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
       else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }
       else { slot = (slot + 1) % 12; }
     } else if (panel === 'plus_one' || panel === 'double_power') {
       steps.push({ ring, slot, panel, pauseMs: 1000 });
       if (lastDir === 'up') { if (ring === 0) break; ring--; }
+      else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
       else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }
       else { slot = (slot + 1) % 12; }
+    } else if (panel === 'envelope') {
+      steps.push({ ring, slot, panel, pauseMs: 600 });
+      if (lastDir === 'up') { if (ring === 0) break; ring--; }
+      else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
+      else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }
+      else { slot = (slot + 1) % 12; }
+    } else if (panel === 'rubber_band') {
+      steps.push({ ring, slot, panel, pauseMs: 150 });
+      // Deflect Mario inward when moving horizontally — slot stays same so stacked bands are each hit
+      if (lastDir === 'left' || lastDir === 'right') {
+        if (ring === 0) break;
+        ring--;
+        // lastDir unchanged: Mario continues left/right from the new ring on the next step
+      } else {
+        if (lastDir === 'up') { if (ring === 0) break; ring--; }
+        else { if (ring === NUM_RINGS - 1) break; ring++; }
+      }
     } else if (panel === 'action') {
       steps.push({ ring, slot, panel, pauseMs: 300 });
       break;
@@ -158,6 +203,7 @@ export function simulatePath(rings: RingState[], startRing = 3, startSlot = 8, m
       // empty — continue in last direction (momentum)
       steps.push({ ring, slot, panel: 'empty', pauseMs: 0 });
       if (lastDir === 'up') { if (ring === 0) break; ring--; }
+      else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
       else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }
       else { slot = (slot + 1) % 12; }
     }

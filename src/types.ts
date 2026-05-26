@@ -1,5 +1,5 @@
 // Panel types for ring slots
-export type PanelType = 'empty' | 'action' | 'heal' | 'arrow_up' | 'arrow_left' | 'arrow_right' | 'plus_one' | 'double_power' | 'treasure_chest' | 'on_panel' | 'magic_circle' | 'coin';
+export type PanelType = 'empty' | 'action' | 'heal' | 'arrow_up' | 'arrow_left' | 'arrow_right' | 'plus_one' | 'double_power' | 'treasure_chest' | 'on_panel' | 'magic_circle' | 'arrow_down' | 'envelope' | 'coin' | 'rubber_band';
 
 // Game phases
 export type Phase =
@@ -24,6 +24,8 @@ export type Phase =
   | 'pencil_grab'
   | 'rainbow_smash'
   | 'rainbow_roll_attack'
+  | 'pullback'
+  | 'bumper_bands'
   | 'save_prompt'
   | 'victory'
   | 'game_over';
@@ -62,6 +64,8 @@ export interface PanelDistribution {
   treasure_chest: number;
   on_panel: number;
   magic_circle: number;
+  arrow_down: number;
+  envelope: number;
   empty: number;
 }
 
@@ -162,7 +166,7 @@ export interface GameState {
   marioFinalSlot: number;       // which slot Mario ended on
   attackAnimT: number;           // 0..1 progress for jump/hammer animation
   attackTimingPressed: boolean;  // player pressed Space during jump/hammer
-  attackPerfect: boolean;        // timing was in perfect window
+  attackQuality: 'none' | 'nice' | 'great' | 'excellent'; // timing quality
   mushroomCount: number;           // mushroom items Mario has
   magicCircleActive: boolean;      // ON panel was stepped on this turn
   marioReachedMagicCircle: boolean;
@@ -171,6 +175,9 @@ export interface GameState {
   mashCount: number;               // how many times Space has been pressed
   mashCooldown: number;            // ms until next mash press allowed (250ms reload)
   coinBonus: number;               // bonus damage from coins collected
+  envelopeMessage: string;      // current envelope tip text
+  envelopeTimer: number;        // ms remaining to show envelope
+  attacksRemaining: number;     // attacks left for +1 panel second hit
 
   // Testing mode
   testingMode: boolean;
@@ -209,6 +216,11 @@ export interface GameState {
   noReloadMode: boolean;            // after rainbow smash: boss only does 2-dmg "Worse Case"
   saveCursor: 'yes' | 'no';         // which option is highlighted in save_prompt
   rainbowRollAttackT: number;       // 0..1 progress for rainbow roll attack projectile
+
+  rubberBands: Array<{ring: number; slot: number; origPanel: 'arrow_up' | 'arrow_down'}>;
+  rubberBandCount: number;
+  rubberBandHpPerBand: number;
+  pullbackTimer: number;
 }
 
 export interface TargetedPanel {

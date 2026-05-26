@@ -8,7 +8,7 @@ export const BOSSES: BossDef[] = [
     maxHp: 150,
     attack: 10,
     color: '#ff4466',
-    panels: { action: 4, plus_one: 2, double_power: 1, arrow_up: 5, arrow_left: 5, arrow_right: 5, treasure_chest: 3, on_panel: 2, magic_circle: 1, empty: 20 },
+    panels: { action: 4, plus_one: 2, double_power: 1, arrow_up: 5, arrow_left: 5, arrow_right: 5, treasure_chest: 3, on_panel: 2, magic_circle: 1, arrow_down: 1, envelope: 1, empty: 18 },
   },
   {
     id: 1,
@@ -17,7 +17,7 @@ export const BOSSES: BossDef[] = [
     maxHp: 100,
     attack: 14,
     color: '#ff8800',
-    panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 4, arrow_left: 2, arrow_right: 2, treasure_chest: 3, on_panel: 2, magic_circle: 2, empty: 26 },
+    panels: { action: 3, plus_one: 1, double_power: 1, arrow_up: 8, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 1, arrow_down: 5, envelope: 1, empty: 20 },
   },
   {
     id: 2,
@@ -26,7 +26,7 @@ export const BOSSES: BossDef[] = [
     maxHp: 150,
     attack: 18,
     color: '#ffcc00',
-    panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 4, arrow_left: 2, arrow_right: 2, treasure_chest: 3, on_panel: 2, magic_circle: 2, empty: 26 },
+    panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 4, arrow_left: 2, arrow_right: 2, treasure_chest: 3, on_panel: 2, magic_circle: 2, arrow_down: 1, envelope: 1, empty: 24 },
     special: 'hole_punch',
   },
   {
@@ -36,7 +36,7 @@ export const BOSSES: BossDef[] = [
     maxHp: 180,
     attack: 22,
     color: '#aa44cc',
-    panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 4, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 2, empty: 27 },
+    panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 4, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 2, arrow_down: 1, envelope: 1, empty: 25 },
     special: 'tape',
   },
   {
@@ -46,7 +46,7 @@ export const BOSSES: BossDef[] = [
     maxHp: 336,
     attack: 26,
     color: '#22cc55',
-    panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 4, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 3, empty: 26 },
+    panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 4, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 3, arrow_down: 1, envelope: 1, empty: 24 },
     special: 'scissors',
   },
   {
@@ -56,7 +56,7 @@ export const BOSSES: BossDef[] = [
     maxHp: 350,
     attack: 30,
     color: '#4466cc',
-    panels: { action: 3, plus_one: 3, double_power: 3, arrow_up: 4, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 3, empty: 24 },
+    panels: { action: 3, plus_one: 3, double_power: 3, arrow_up: 4, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 3, arrow_down: 1, envelope: 1, empty: 22 },
     special: 'origami_king',
   },
 ];
@@ -158,14 +158,6 @@ export function drawBoss1(ctx: CanvasRenderingContext2D, cx: number, cy: number,
   ctx.lineTo(cx + sway + 8, cy - r * 0.65);
   ctx.closePath();
   ctx.fill();
-
-  // Eyes
-  ctx.fillStyle = '#ff4400';
-  ctx.beginPath(); ctx.arc(cx + sway - 8, cy - r * 0.55, 4, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx + sway + 8, cy - r * 0.55, 4, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(cx + sway - 7, cy - r * 0.56, 2, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx + sway + 9, cy - r * 0.56, 2, 0, Math.PI * 2); ctx.fill();
 
   // Arms + gloves
   ctx.strokeStyle = '#ff8800';

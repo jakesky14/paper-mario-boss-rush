@@ -16,6 +16,7 @@ import {
   applyOrigamiKingSpecial,
   ensureBacksideReachable,
   NUM_PANELS,
+  shuffleArray,
 } from './rings';
 import { render, CANVAS_W, CANVAS_H, RING_CX, RING_CY, BOSS_RADIUS, RING_WIDTH } from './render';
 
@@ -90,7 +91,7 @@ export class Game {
       marioFinalSlot: 8,
       attackAnimT: 0,
       attackTimingPressed: false,
-      attackPerfect: false,
+      attackQuality: 'none' as const,
       mushroomCount: 3,
       magicCircleActive: false,
       marioReachedMagicCircle: false,
@@ -99,6 +100,9 @@ export class Game {
       mashCount: 0,
       mashCooldown: 0,
       coinBonus: 0,
+      envelopeMessage: '',
+      envelopeTimer: 0,
+      attacksRemaining: 1,
       testingMode: false,
       coins: 1000,
       mainMenuCursor: 'fight',
@@ -139,6 +143,10 @@ export class Game {
       noReloadMode: false,
       saveCursor: 'yes',
       rainbowRollAttackT: 0,
+      rubberBands: [],
+      rubberBandCount: 0,
+      rubberBandHpPerBand: 10,
+      pullbackTimer: 0,
     };
   }
 
@@ -183,7 +191,10 @@ export class Game {
     this.state.marioFinalSlot = 8;
     this.state.attackAnimT = 0;
     this.state.attackTimingPressed = false;
-    this.state.attackPerfect = false;
+    this.state.attackQuality = 'none';
+    this.state.envelopeMessage = '';
+    this.state.envelopeTimer = 0;
+    this.state.attacksRemaining = 1;
     this.state.mushroomCount = 3;
     this.state.magicCircleActive = false;
     this.state.marioReachedMagicCircle = false;
@@ -214,6 +225,14 @@ export class Game {
     this.state.noReloadMode = false;
     this.state.rainbowRollAttackT = 0;
     this.bossSpecialPending = false;
+    this.state.rubberBands = [];
+    this.state.rubberBandCount = bossIndex === 1 ? 10 : 0;
+    this.state.rubberBandHpPerBand = 10;
+    this.state.pullbackTimer = 0;
+    if (bossIndex === 1) {
+      this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
+      this.state.boss.maxHp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
+    }
   }
 
   private startNewTurn(): void {
@@ -249,7 +268,10 @@ export class Game {
     this.state.marioFinalSlot = 8;
     this.state.attackAnimT = 0;
     this.state.attackTimingPressed = false;
-    this.state.attackPerfect = false;
+    this.state.attackQuality = 'none';
+    this.state.envelopeMessage = '';
+    this.state.envelopeTimer = 0;
+    this.state.attacksRemaining = 1;
     // magicCircleActive persists between turns until used
     this.state.marioReachedMagicCircle = false;
     this.state.mashTimer = 0;
@@ -270,10 +292,40 @@ export class Game {
     this.state.bossAttackName = '';
     this.state.turnNumber++;
     this.bossSpecialPending = false;
+    this.state.rubberBands = [];
+    this.state.pullbackTimer = 0;
+    // Boss 1: place rubber bands on up/down arrow positions each turn
+    if (this.state.bossIndex === 1 && this.state.rubberBandCount > 0) {
+      this.placeBumperBands();
+    }
   }
 
   private transitionTo(phase: Phase): void {
     this.state.phase = phase;
+  }
+
+  private placeBumperBands(): void {
+    const rings = this.state.rings;
+    const count = this.state.rubberBandCount;
+    const positions: Array<{ring: number; slot: number; origPanel: 'arrow_up' | 'arrow_down'}> = [];
+    for (let r = 0; r < 4; r++) {
+      for (let s = 0; s < 12; s++) {
+        const p = rings[r].panels[s];
+        if (p === 'arrow_up' || p === 'arrow_down') {
+          positions.push({ ring: r, slot: s, origPanel: p as 'arrow_up' | 'arrow_down' });
+        }
+      }
+    }
+    shuffleArray(positions);
+    // Keep 3 untouched, replace up to `count` others with rubber_band
+    const toReplace = positions.slice(3, 3 + count);
+    const newBands: Array<{ring: number; slot: number; origPanel: 'arrow_up' | 'arrow_down'}> = [];
+    for (const pos of toReplace) {
+      (rings[pos.ring].panels[pos.slot] as string) = 'rubber_band';
+      newBands.push(pos);
+    }
+    this.state.rubberBands = newBands;
+    this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
   }
 
   private bindInput(): void {
@@ -394,31 +446,59 @@ export class Game {
     // Space bar — context-sensitive timing actions
     if (e.code === 'Space') {
       if (phase === 'mario_mash' && this.state.mashTimer > 0 && this.state.mashCount < 10 && this.state.mashCooldown <= 0) {
-        const hit = 7 + Math.floor(Math.random() * 7);
-        this.state.mashDamageTotal += hit;
-        this.state.boss.hp = Math.max(0, this.state.boss.hp - hit);
-        this.state.mashCount++;
-        this.state.mashCooldown = 250; // 0.25s reload between hits
-        this.state.damageNumbers.push({
-          value: hit,
-          x: RING_CX + (Math.random() - 0.5) * 60,
-          y: RING_CY - 30 + (Math.random() - 0.5) * 40,
-          alpha: 1, vy: -2.5, color: '#ffdd00', scale: 1.2, effectType: 'damage',
-        });
-        this.spawnFlash('boss', '#ffaa00');
-        // Check for Rainbow Roll trigger
-        if (this.state.bossIndex === 0 && !this.state.rainbowRollReady &&
-            this.state.boss.hp <= this.state.boss.maxHp / 2 && this.state.boss.hp > 0) {
-          this.state.rainbowRollReady = true;
-          this.state.rainbowRollCharging = true;
+        if (this.state.bossIndex === 1) {
+          // Boss 1: each press destroys one rubber band permanently
+          if (this.state.rubberBandCount > 0) {
+            this.state.rubberBandCount--;
+            const hit = this.state.rubberBandHpPerBand;
+            this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
+            this.state.mashDamageTotal += hit;
+            this.state.mashCount++;
+            this.state.mashCooldown = 250;
+            // Remove one rubber band panel from rings
+            if (this.state.rubberBands.length > 0) {
+              const removed = this.state.rubberBands.pop()!;
+              this.state.rings[removed.ring].panels[removed.slot] = 'empty';
+            }
+            this.state.damageNumbers.push({
+              value: hit, x: RING_CX + (Math.random() - 0.5) * 60,
+              y: RING_CY - 30 + (Math.random() - 0.5) * 40,
+              alpha: 1, vy: -2.5, color: '#ff8800', scale: 1.4,
+              label: 'SNAP!', effectType: 'damage',
+            });
+            this.spawnFlash('boss', '#ff8844');
+            if (this.state.boss.hp <= 0) {
+              this.handleBossDefeated();
+              return;
+            }
+          }
+        } else {
+          const hit = 7 + Math.floor(Math.random() * 7);
+          this.state.mashDamageTotal += hit;
+          this.state.boss.hp = Math.max(0, this.state.boss.hp - hit);
+          this.state.mashCount++;
+          this.state.mashCooldown = 250;
           this.state.damageNumbers.push({
-            label: '!! RAINBOW ROLL NEXT TURN!!', value: 0,
-            x: RING_CX, y: RING_CY - 70, alpha: 1, vy: -2, color: '#ff8800', scale: 1.4,
+            value: hit,
+            x: RING_CX + (Math.random() - 0.5) * 60,
+            y: RING_CY - 30 + (Math.random() - 0.5) * 40,
+            alpha: 1, vy: -2.5, color: '#ffdd00', scale: 1.2, effectType: 'damage',
           });
-        }
-        // End mash immediately once all 10 hits used
-        if (this.state.mashCount >= 10) {
-          this.state.mashTimer = 0;
+          this.spawnFlash('boss', '#ffaa00');
+          // Check for Rainbow Roll trigger
+          if (this.state.bossIndex === 0 && !this.state.rainbowRollReady &&
+              this.state.boss.hp <= this.state.boss.maxHp / 2 && this.state.boss.hp > 0) {
+            this.state.rainbowRollReady = true;
+            this.state.rainbowRollCharging = true;
+            this.state.damageNumbers.push({
+              label: '!! RAINBOW ROLL NEXT TURN!!', value: 0,
+              x: RING_CX, y: RING_CY - 70, alpha: 1, vy: -2, color: '#ff8800', scale: 1.4,
+            });
+          }
+          // End mash immediately once all 10 hits used
+          if (this.state.mashCount >= 10) {
+            this.state.mashTimer = 0;
+          }
         }
         return;
       }
@@ -427,15 +507,16 @@ export class Game {
         return;
       }
       if (phase === 'mario_jump' && !this.state.attackTimingPressed) {
-        this.state.attackTimingPressed = true;
         const dist = Math.abs(this.state.attackAnimT - 0.5);
-        this.state.attackPerfect = dist <= 0.07;
+        this.state.attackQuality = dist <= 0.05 ? 'excellent' : dist <= 0.12 ? 'great' : dist <= 0.22 ? 'nice' : 'none';
+        this.state.attackTimingPressed = true;
         return;
       }
       if (phase === 'mario_hammer' && !this.state.attackTimingPressed) {
+        const T = this.state.attackAnimT;
+        this.state.attackQuality = T >= 0.88 ? 'excellent' : T >= 0.76 ? 'great' : T >= 0.62 ? 'nice' : 'none';
         this.state.attackTimingPressed = true;
-        this.state.attackPerfect = this.state.attackAnimT >= 0.82;
-        this.applyFinalDamage('hammer', this.state.attackPerfect);
+        this.applyFinalDamage('hammer', this.state.attackQuality === 'excellent');
         return;
       }
       if (phase === 'title') { this.transitionTo('main_menu'); return; }
@@ -701,7 +782,11 @@ export class Game {
     this.state.blockWindowOpen = false;
     this.state.playerBlocked = false;
     if (!this.state.bossAttackName) {
-      this.state.bossAttackName = this.state.boss.name.toUpperCase() + '!';
+      if (this.state.bossIndex === 1) {
+        this.state.bossAttackName = 'RUBBER BIND!';
+      } else {
+        this.state.bossAttackName = this.state.boss.name.toUpperCase() + '!';
+      }
     }
   }
 
@@ -709,7 +794,8 @@ export class Game {
     this.state.attackChoice = 'jump';
     this.state.attackAnimT = 0;
     this.state.attackTimingPressed = false;
-    this.state.attackPerfect = false;
+    this.state.attackQuality = 'none';
+    this.state.bossAttackName = 'JUMP!';
     this.transitionTo('mario_jump');
   }
 
@@ -755,14 +841,21 @@ export class Game {
     this.state.attackChoice = 'hammer';
     this.state.attackAnimT = 0;
     this.state.attackTimingPressed = false;
-    this.state.attackPerfect = false;
+    this.state.attackQuality = 'none';
+    this.state.bossAttackName = 'HAMMER!';
     this.transitionTo('mario_hammer');
   }
 
   private applyFinalDamage(type: 'jump' | 'hammer', perfect: boolean): void {
-    let base = type === 'jump' ? 30 : 50;
+    const heartBonus = this.state.maxUpHeartsBought * 2;
+    const quality = this.state.attackQuality;
+
+    // Base damage per quality tier
+    const jumpDmg: Record<string, number> = { none: 6, nice: 7, great: 8, excellent: 9 };
+    const hammerDmg: Record<string, number> = { none: 7, nice: 8, great: 10, excellent: 12 };
+    let base = (type === 'jump' ? jumpDmg[quality] : hammerDmg[quality]) + heartBonus;
+
     if (this.state.bossIndex === 0) {
-      base = type === 'jump' ? 6 : 7;
       if (!this.state.bossStunned) {
         const backSlots = [11, 0, 1, 2, 3];
         const frontSlots = [6, 7, 8];
@@ -780,9 +873,10 @@ export class Game {
         }
       }
     }
-    const perfMult = perfect ? 1.5 : 1.0;
+
+    const perfMult = 1.0; // quality already baked in
     const hit = Math.round(base * this.state.marioDamageMult * perfMult);
-    const total = (hit * this.state.marioAttackCount) + this.state.coinBonus;
+    const total = hit + (this.state.attacksRemaining <= 1 ? this.state.coinBonus : 0);
 
     this.state.boss.hp = Math.max(0, this.state.boss.hp - total);
     this.state.lastDamageDealt = total;
@@ -800,19 +894,26 @@ export class Game {
 
     this.state.damageNumbers.push({
       value: hit, x: RING_CX - 20, y: RING_CY - 50, alpha: 1, vy: -2.5,
-      color: perfect ? '#ffdd00' : '#ff6644', scale: 1.5,
-      label: perfect ? `PERFECT! ${hit}` : undefined, effectType: 'damage',
+      color: quality === 'excellent' ? '#ffdd00' : quality === 'great' ? '#88ff44' : quality === 'nice' ? '#44ddff' : '#ff6644',
+      scale: 1.5,
+      label: quality === 'excellent' ? 'EXCELLENT!' : quality === 'great' ? 'GREAT!' : quality === 'nice' ? 'NICE!' : undefined,
+      effectType: 'damage',
     });
-    if (this.state.marioAttackCount > 1) {
-      this.state.damageNumbers.push({
-        value: hit, x: RING_CX + 20, y: RING_CY - 30, alpha: 1, vy: -2,
-        color: perfect ? '#ffdd00' : '#ff6644', scale: 1.5, effectType: 'damage',
-      });
-    }
     this.spawnFlash('boss', perfect ? '#ffdd44' : '#ffffff');
 
     if (this.state.boss.hp <= 0) {
       this.handleBossDefeated();
+      return;
+    }
+
+    // Second attack check
+    if (this.state.attacksRemaining > 1 && this.state.boss.hp > 0) {
+      this.state.attacksRemaining--;
+      this.state.attackQuality = 'none';
+      this.state.attackTimingPressed = false;
+      this.state.attackAnimT = 0;
+      this.state.attackChoice = 'pending';
+      this.transitionTo('attack_choice');
       return;
     }
 
@@ -1123,6 +1224,16 @@ export class Game {
       maxUpHeartsBought: this.state.maxUpHeartsBought,
       bossFirstClear: [...this.state.bossFirstClear],
     };
+    try {
+      localStorage.setItem('pmBossRush', JSON.stringify({
+        coins: preserved.coins,
+        accessories: preserved.accessories,
+        maxUpHeartsBought: preserved.maxUpHeartsBought,
+        maxUpHeartsInStock: preserved.maxUpHeartsInStock,
+        bossFirstClear: preserved.bossFirstClear,
+        nextBossIndex: 0,
+      }));
+    } catch (_) {}
     const newState = this.createInitialState();
     newState.phase = 'main_menu';
     newState.coins = preserved.coins;
@@ -1219,6 +1330,9 @@ export class Game {
       }
     }
 
+    // Update envelope timer (always ticks down)
+    if (state.envelopeTimer > 0) state.envelopeTimer = Math.max(0, state.envelopeTimer - dt);
+
     switch (state.phase) {
       case 'title':
         state.titleRingAngle += 0.0008 * dt;
@@ -1242,6 +1356,10 @@ export class Game {
           state.primaryTargetTimer = 4500;
           state.bossAttackName = 'PRIMARY TARGET';
           this.transitionTo('primary_target');
+        } else if (state.bossIndex === 1) {
+          state.pullbackTimer = 2500;
+          state.bossAttackName = 'BUMPER BANDS!';
+          this.transitionTo('bumper_bands');
         } else {
           this.transitionTo('puzzle');
         }
@@ -1256,6 +1374,15 @@ export class Game {
           this.transitionTo('puzzle');
         }
         break;
+
+      case 'bumper_bands': {
+        state.pullbackTimer = Math.max(0, state.pullbackTimer - dt);
+        if (state.pullbackTimer <= 0) {
+          state.bossAttackName = '';
+          this.transitionTo('puzzle');
+        }
+        break;
+      }
 
       case 'puzzle':
         state.puzzleTimer -= dt;
@@ -1310,7 +1437,8 @@ export class Game {
               color: '#44ff88', scale: 1.3, effectType: 'heal',
             });
           } else if (step.panel === 'plus_one') {
-            state.marioAttackCount = 2;
+            state.marioAttackCount = 1; // no longer doubles damage
+            state.attacksRemaining = 2; // gives a second attack choice
             state.damageNumbers.push({
               value: 0,
               label: '+1 ATTACK!',
@@ -1384,6 +1512,24 @@ export class Game {
               color: '#ffdd00',
               scale: 1.1,
             });
+          } else if (step.panel === 'envelope') {
+            // Determine message based on game state
+            let msg = '';
+            if (state.bossIndex === 0) {
+              if (state.noReloadMode) {
+                msg = "You're almost done! Attack it to finish it off!";
+              } else if (state.rainbowRollReady) {
+                msg = "Be bold! Just grab those pencils head-on with the 1,000-Fold Arms. If it attacks, stay calm and guard!";
+              } else if (state.bossStunned) {
+                msg = "When it runs out of missiles, that's your chance! Attack inside the case, but don't get TOO close!";
+              } else {
+                msg = "Avoid the targeted panels, sneak behind the case, then whack the lid with your hammer!";
+              }
+            }
+            if (msg) {
+              state.envelopeMessage = msg;
+              state.envelopeTimer = 5000;
+            }
           }
 
           // Advance to next step
@@ -1412,6 +1558,7 @@ export class Game {
               // Start mash attack
               state.mashTimer = 5000;
               state.mashDamageTotal = 0;
+              state.bossAttackName = '1000-FOLD ARMS!';
               this.transitionTo('mario_mash');
             } else if (state.marioReachedAction) {
               state.attackChoice = 'pending';
@@ -1440,8 +1587,8 @@ export class Game {
         const JUMP_DURATION = 1200;
         state.attackAnimT = Math.min(1, state.attackAnimT + dt / JUMP_DURATION);
         if (state.attackAnimT >= 1.0) {
-          // Apply damage (perfect if Space was pressed in the window)
-          this.applyFinalDamage('jump', state.attackPerfect);
+          // Apply damage (quality already set when Space was pressed)
+          this.applyFinalDamage('jump', state.attackQuality === 'excellent');
         }
         break;
       }
@@ -1453,7 +1600,7 @@ export class Game {
           if (state.attackAnimT >= 1.0) {
             // Auto-apply normal damage (player was too slow or missed)
             state.attackTimingPressed = true;
-            state.attackPerfect = false;
+            state.attackQuality = 'none';
             this.applyFinalDamage('hammer', false);
           }
         }
@@ -1528,12 +1675,19 @@ export class Game {
           if (state.playerHp <= 0) {
             this.transitionTo('game_over');
           } else {
-            if (this.bossSpecialPending) {
-              if (state.boss.special === 'hole_punch' || state.boss.special === 'tape') applyHolePunchSpecial(state.rings);
-              if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') applyOrigamiKingSpecial(state.rings);
-              this.bossSpecialPending = false;
+            if (state.bossIndex === 1) {
+              // Pullback phase before new turn
+              state.pullbackTimer = 1200;
+              state.bossAttackName = 'PULLBACK!';
+              this.transitionTo('pullback');
+            } else {
+              if (this.bossSpecialPending) {
+                if (state.boss.special === 'hole_punch' || state.boss.special === 'tape') applyHolePunchSpecial(state.rings);
+                if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') applyOrigamiKingSpecial(state.rings);
+                this.bossSpecialPending = false;
+              }
+              this.transitionTo('setup');
             }
-            this.transitionTo('setup');
           }
           break;
         }
@@ -1669,6 +1823,17 @@ export class Game {
             state.boss.attack = 2;
             this.transitionTo('setup');
           }
+        }
+        break;
+      }
+
+      case 'pullback': {
+        state.pullbackTimer = Math.max(0, state.pullbackTimer - dt);
+        if (state.pullbackTimer <= 0) {
+          // Restore boss HP based on remaining rubber bands
+          state.boss.hp = state.rubberBandCount * state.rubberBandHpPerBand;
+          state.bossAttackName = '';
+          this.transitionTo('setup');
         }
         break;
       }
