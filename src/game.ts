@@ -357,7 +357,7 @@ export class Game {
       newBands.push(pos);
     }
     this.state.rubberBands = newBands;
-    this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
+    this.state.boss.hp = Math.max(0, this.state.rubberBandCount * this.state.rubberBandHpPerBand - this.state.rubberBindPermanentDmg);
   }
 
   private bindInput(): void {
@@ -607,8 +607,6 @@ export class Game {
         this.startJumpAttack();
       } else if (e.key === 'h' || e.key === 'H') {
         this.startHammerAttack();
-      } else if ((e.key === 'f' || e.key === 'F') && this.state.bossIndex === 0 && !this.state.bossStunned) {
-        this.startCaseCloseArms();
       }
       return;
     }
@@ -1004,25 +1002,6 @@ export class Game {
     this.state.attackQuality = 'none';
     this.state.bossAttackName = 'HAMMER!';
     this.transitionTo('mario_hammer');
-  }
-
-  private startCaseCloseArms(): void {
-    // 1000-fold arms case close for boss 0 (non-stunned, from caseCloseSlots, any ring)
-    const caseCloseSlots = [10, 11, 0, 1];
-    if (!caseCloseSlots.includes(this.state.marioFinalSlot)) {
-      this.state.damageNumbers.push({
-        value: 0, label: 'WRONG POSITION!',
-        x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2.5, color: '#ff4444', scale: 1.5,
-      });
-      this.startPencilRain();
-      return;
-    }
-    this.state.bossAttackName = '1000-FOLD ARMS!';
-    const sign = Math.random() < 0.5 ? 1 : -1;
-    this.state.pencilGrabHandsPos = sign * (1 + Math.floor(Math.random() * 3));
-    this.state.pencilGrabGripped = false;
-    this.state.pencilGrabMode = 'case_close';
-    this.transitionTo('pencil_grab');
   }
 
   private applyFinalDamage(type: 'jump' | 'hammer', perfect: boolean): void {
@@ -1871,11 +1850,18 @@ export class Game {
             if (state.bossIndex === 0 && state.marioReachedMagicCircle && state.rainbowRollReady) {
               // Rainbow Roll intercept
               state.rainbowRollReady = false;
-              // Random starting offset ±2 or ±3 so player must align
               const sign = Math.random() < 0.5 ? 1 : -1;
               state.pencilGrabHandsPos = sign * (2 + Math.floor(Math.random() * 2));
               state.pencilGrabGripped = false;
               state.pencilGrabMode = 'rainbow';
+              this.transitionTo('pencil_grab');
+            } else if (state.bossIndex === 0 && state.marioReachedMagicCircle && !state.bossStunned) {
+              // 1000-fold arms to close the pencil case (from magic circle)
+              const sign = Math.random() < 0.5 ? 1 : -1;
+              state.pencilGrabHandsPos = sign * (1 + Math.floor(Math.random() * 3));
+              state.pencilGrabGripped = false;
+              state.pencilGrabMode = 'case_close';
+              state.bossAttackName = '1000-FOLD ARMS!';
               this.transitionTo('pencil_grab');
             } else if (state.bossIndex === 0) {
               state.pencilCutsceneTimer = 4000;

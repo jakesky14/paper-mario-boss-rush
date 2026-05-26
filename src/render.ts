@@ -42,7 +42,7 @@ export const BOSS_RADIUS = 70;
 export const RING_WIDTH = 50;
 export const ARC_GAP_DEG = 1.5; // degrees gap between panels
 
-const MARIO_SLOT = 8;
+const MARIO_SLOT = 6;
 
 // Panel fill colors
 const PANEL_COLORS: Record<PanelType, string> = {
@@ -1588,38 +1588,10 @@ function drawAttackChoiceOverlay(
     ctx.fillText('Must be on Ring 1 or 2!', hbx + btnW / 2, hby + 70);
   }
 
-  // Boss 0 (non-stunned) in correct column: show [F] 1000-Fold Arms option
-  const caseCloseSlots = [10, 11, 0, 1];
-  const showFoldArms = state.bossIndex === 0 && !state.bossStunned;
-  if (showFoldArms) {
-    const fbx = CANVAS_W / 2 - 75;
-    const fby = by + 190;
-    const fbW = 150;
-    const fbH = 40;
-    const inPosition = caseCloseSlots.includes(state.marioFinalSlot);
-    ctx.fillStyle = inPosition ? '#004488' : '#333344';
-    roundRect(ctx, fbx, fby, fbW, fbH, 8);
-    ctx.fill();
-    ctx.strokeStyle = inPosition ? '#44aaff' : '#555566';
-    ctx.lineWidth = 2;
-    roundRect(ctx, fbx, fby, fbW, fbH, 8);
-    ctx.stroke();
-    ctx.fillStyle = inPosition ? '#ffffff' : '#888899';
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('[F] 1000-Fold Arms', fbx + fbW / 2, fby + 16);
-    ctx.font = '10px monospace';
-    ctx.fillStyle = inPosition ? '#88ccff' : '#666677';
-    ctx.fillText(inPosition ? 'Trap pencils inside case!' : 'Wrong position!', fbx + fbW / 2, fby + 30);
-  }
-
   ctx.fillStyle = '#aaaaaa';
   ctx.font = '11px monospace';
   ctx.textAlign = 'center';
-  const hintLine = showFoldArms
-    ? 'J = Jump  |  H = Hammer  |  F = 1000-Fold Arms'
-    : 'Press J for Jump or H for Hammer';
-  ctx.fillText(hintLine, CANVAS_W / 2, by + bh - 16);
+  ctx.fillText('Press J for Jump or H for Hammer', CANVAS_W / 2, by + bh - 16);
 
   // Boss 1: warn player that jump/hammer are resisted
   if (state.bossIndex === 1) {
