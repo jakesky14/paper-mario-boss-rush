@@ -1078,6 +1078,10 @@ function getPhaseHint(state: GameState): string {
       return 'Rubber Band is spreading bands across the rings!';
     case 'pullback':
       return 'Rubber bands returning — HP being restored...';
+    case 'rubber_bind':
+      return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'Rubber Band is launching bands!';
+    case 'trapped_snapback':
+      return state.marioTied ? "Tied up — can't move!" : 'TRAPPED SNAPBACK incoming!';
     case 'save_prompt':
       return '← → navigate   ENTER confirm';
     default:
@@ -2623,6 +2627,141 @@ export function drawTestingSelect(ctx: CanvasRenderingContext2D, state: GameStat
   void state;
 }
 
+function drawRubberBindPhase(ctx: CanvasRenderingContext2D, state: GameState, tick: number): void {
+  const bandIndex = state.rubberBindBandIndex;
+  const t = state.attackProjectileT;
+  const inDelay = state.rubberBindDelayTimer > 0;
+
+  const marioTarget = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+
+  // Flying rubber band (during travel phase)
+  if (!inDelay && t > 0 && t < 1) {
+    const eased = t * t * (3 - 2 * t);
+    const px = RING_CX + (marioTarget.x - RING_CX) * eased;
+    const py = RING_CY + (marioTarget.y - RING_CY) * eased;
+    drawRubberBandProjectile(ctx, px, py, tick * 0.07);
+  }
+
+  // 3 band progress indicators
+  for (let i = 0; i < 3; i++) {
+    const ix = marioTarget.x + (i - 1) * 22;
+    const iy = marioTarget.y - 30;
+    ctx.save();
+    if (i < bandIndex || (i === bandIndex && inDelay)) {
+      ctx.fillStyle = state.marioTied ? '#cc4400' : '#44ff88';
+      ctx.beginPath();
+      ctx.arc(ix, iy, 7, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (i === bandIndex && !inDelay) {
+      ctx.strokeStyle = '#ffaa44';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ix, iy, 7, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(ix, iy, 7, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // TIED indicator near Mario
+  if (state.marioTied) {
+    ctx.save();
+    ctx.fillStyle = '#cc4400';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.font = 'bold 15px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeText('TIED!', marioTarget.x, marioTarget.y + 18);
+    ctx.fillText('TIED!', marioTarget.x, marioTarget.y + 18);
+    ctx.restore();
+  }
+
+  void tick;
+}
+
+function drawTrappedSnapback(ctx: CanvasRenderingContext2D, state: GameState, tick: number): void {
+  const TOTAL_MS = 3000;
+  const INTRO_MS = 1500;
+  const elapsed = TOTAL_MS - state.trappedSnapbackTimer;
+
+  const marioPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+
+  if (elapsed < INTRO_MS) {
+    // Tied up message
+    const blink = Math.floor(Date.now() / 300) % 2 === 0;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, 275, CANVAS_W, 130);
+    ctx.fillStyle = blink ? '#cc4400' : '#ff8844';
+    ctx.font = 'bold 26px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.strokeText("Tied up, can't move.", CANVAS_W / 2, 325);
+    ctx.fillText("Tied up, can't move.", CANVAS_W / 2, 325);
+    ctx.fillStyle = '#ffdd88';
+    ctx.font = '14px monospace';
+    ctx.fillText('Rubber Band winds up the snapback...', CANVAS_W / 2, 360);
+    ctx.restore();
+
+    // Draw rubber band lines around Mario
+    ctx.save();
+    ctx.strokeStyle = '#cc4400';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 4]);
+    const pulse = 0.8 + 0.2 * Math.sin(tick * 0.05);
+    ctx.globalAlpha = pulse;
+    ctx.beginPath();
+    ctx.arc(marioPos.x, marioPos.y, 14, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  } else {
+    // Approach: stretch rubber band line from boss to Mario
+    const approachT = (elapsed - INTRO_MS) / (TOTAL_MS - INTRO_MS);
+    const eased = approachT * approachT;
+
+    // Draw stretching rubber band
+    ctx.save();
+    ctx.strokeStyle = '#cc4400';
+    ctx.lineWidth = Math.max(2, 6 * (1 - approachT));
+    ctx.setLineDash([8, 4]);
+    const lineStartX = RING_CX + (marioPos.x - RING_CX) * eased * 0.6;
+    const lineStartY = RING_CY + (marioPos.y - RING_CY) * eased * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(lineStartX, lineStartY);
+    ctx.lineTo(marioPos.x, marioPos.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Show attack text
+    const blink2 = Math.floor(Date.now() / 180) % 2 === 0;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(100, 288, CANVAS_W - 200, 80);
+    ctx.fillStyle = blink2 ? '#ff3300' : '#ff8844';
+    ctx.font = 'bold 24px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.strokeText('TRAPPED SNAPBACK!', CANVAS_W / 2, 330);
+    ctx.fillText('TRAPPED SNAPBACK!', CANVAS_W / 2, 330);
+    const dmgLabels = ['20-25', '16-21', '14-19', '12-17'];
+    ctx.fillStyle = '#ffdd88';
+    ctx.font = '13px monospace';
+    ctx.fillText(`Ring ${state.marioFinalRing + 1}: ${dmgLabels[state.marioFinalRing]} incoming!`, CANVAS_W / 2, 357);
+    ctx.restore();
+  }
+
+  void tick;
+}
+
 function drawBumperBands(ctx: CanvasRenderingContext2D, state: GameState): void {
   // progress 0=start, 1=done (pullbackTimer counts down from 2500)
   const totalDur = 2500;
@@ -2783,6 +2922,8 @@ export function render(
     case 'rainbow_roll_attack':
     case 'pullback':
     case 'bumper_bands':
+    case 'rubber_bind':
+    case 'trapped_snapback':
       // Fall through to main game view, then overlay
       break;
   }
@@ -2822,7 +2963,7 @@ export function render(
     // Mario stays at his final walk position
     const marioFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
     drawMarioSprite(ctx, marioFinalPos.x, marioFinalPos.y);
-  } else if (state.phase === 'rainbow_smash' || state.phase === 'rainbow_roll_attack' || state.phase === 'pullback' || state.phase === 'bumper_bands') {
+  } else if (state.phase === 'rainbow_smash' || state.phase === 'rainbow_roll_attack' || state.phase === 'pullback' || state.phase === 'bumper_bands' || state.phase === 'boss_attack' || state.phase === 'attack_choice' || state.phase === 'rubber_bind' || state.phase === 'trapped_snapback') {
     const marioFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
     drawMarioSprite(ctx, marioFinalPos.x, marioFinalPos.y);
   } else {
@@ -2921,5 +3062,17 @@ export function render(
 
   if (state.phase === 'bumper_bands') {
     drawBumperBands(ctx, state);
+  }
+
+  if (state.phase === 'rubber_bind') {
+    drawRubberBindPhase(ctx, state, tick);
+  }
+
+  if (state.phase === 'rubber_bind') {
+    drawBlockUI(ctx, state, tick);
+  }
+
+  if (state.phase === 'trapped_snapback') {
+    drawTrappedSnapback(ctx, state, tick);
   }
 }

@@ -147,6 +147,11 @@ export class Game {
       rubberBandCount: 0,
       rubberBandHpPerBand: 10,
       pullbackTimer: 0,
+      marioTied: false,
+      rubberBindBandIndex: 0,
+      rubberBindDelayTimer: 0,
+      rubberBindPermanentDmg: 0,
+      trappedSnapbackTimer: 0,
     };
   }
 
@@ -229,6 +234,11 @@ export class Game {
     this.state.rubberBandCount = bossIndex === 1 ? 10 : 0;
     this.state.rubberBandHpPerBand = 10;
     this.state.pullbackTimer = 0;
+    this.state.marioTied = false;
+    this.state.rubberBindBandIndex = 0;
+    this.state.rubberBindDelayTimer = 0;
+    this.state.rubberBindPermanentDmg = 0;
+    this.state.trappedSnapbackTimer = 0;
     if (bossIndex === 1) {
       this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
       this.state.boss.maxHp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
@@ -294,6 +304,9 @@ export class Game {
     this.bossSpecialPending = false;
     this.state.rubberBands = [];
     this.state.pullbackTimer = 0;
+    this.state.rubberBindBandIndex = 0;
+    this.state.rubberBindDelayTimer = 0;
+    // NOTE: do NOT reset marioTied here - it persists until trapped_snapback fires
     // Boss 1: place rubber bands on up/down arrow positions each turn
     if (this.state.bossIndex === 1 && this.state.rubberBandCount > 0) {
       this.placeBumperBands();
@@ -500,6 +513,16 @@ export class Game {
             this.state.mashTimer = 0;
           }
         }
+        return;
+      }
+      if (phase === 'rubber_bind' && this.state.blockWindowOpen && !this.state.playerBlocked && !this.state.marioTied) {
+        // Block success: push Mario back one ring (outward, toward ring 3)
+        this.state.marioFinalRing = Math.min(3, this.state.marioFinalRing + 1);
+        this.state.playerBlocked = true;
+        this.state.damageNumbers.push({
+          value: 0, label: 'BLOCKED! PUSHED BACK!',
+          x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -1.5, color: '#44aaff', scale: 1.3,
+        });
         return;
       }
       if ((phase === 'boss_attack' || phase === 'pencil_rain' || phase === 'snap_shut' || phase === 'rainbow_roll_attack') && this.state.blockWindowOpen && !this.state.playerBlocked) {
@@ -753,8 +776,7 @@ export class Game {
         if (this.state.boss.special === 'origami_king' || this.state.boss.special === 'scissors') {
           this.bossSpecialPending = true;
         }
-        this.transitionTo('boss_attack');
-        this.doBossAttack();
+        this.startEnemyTurn();
       }
       return;
     }
@@ -775,6 +797,25 @@ export class Game {
       color,
       target,
     });
+  }
+
+  private startEnemyTurn(): void {
+    if (this.state.bossIndex === 1) {
+      this.startRubberBind();
+    } else {
+      this.transitionTo('boss_attack');
+      this.doBossAttack();
+    }
+  }
+
+  private startRubberBind(): void {
+    this.state.bossAttackName = 'RUBBER BIND!';
+    this.state.rubberBindBandIndex = 0;
+    this.state.attackProjectileT = 0;
+    this.state.rubberBindDelayTimer = 0;
+    this.state.blockWindowOpen = false;
+    this.state.playerBlocked = false;
+    this.transitionTo('rubber_bind');
   }
 
   private doBossAttack(): void {
@@ -830,8 +871,7 @@ export class Game {
       if (this.state.boss.special === 'origami_king' || this.state.boss.special === 'scissors') {
         this.bossSpecialPending = true;
       }
-      this.transitionTo('boss_attack');
-      this.doBossAttack();
+      this.startEnemyTurn();
       return;
     }
     // Boss 0 non-stunned in case-close zone: case closes on hammer connect
@@ -959,8 +999,7 @@ export class Game {
     if (this.state.boss.special === 'origami_king' || this.state.boss.special === 'scissors') {
       this.bossSpecialPending = true;
     }
-    this.transitionTo('boss_attack');
-    this.doBossAttack();
+    this.startEnemyTurn();
   }
 
   private generatePrimaryTargets(): void {
@@ -1357,9 +1396,15 @@ export class Game {
           state.bossAttackName = 'PRIMARY TARGET';
           this.transitionTo('primary_target');
         } else if (state.bossIndex === 1) {
-          state.pullbackTimer = 2500;
-          state.bossAttackName = 'BUMPER BANDS!';
-          this.transitionTo('bumper_bands');
+          if (state.marioTied) {
+            state.trappedSnapbackTimer = 3000;
+            state.bossAttackName = 'TRAPPED SNAPBACK!';
+            this.transitionTo('trapped_snapback');
+          } else {
+            state.pullbackTimer = 2500;
+            state.bossAttackName = 'BUMPER BANDS!';
+            this.transitionTo('bumper_bands');
+          }
         } else {
           this.transitionTo('puzzle');
         }
@@ -1384,6 +1429,109 @@ export class Game {
         break;
       }
 
+      case 'rubber_bind': {
+        const BIND_TRAVEL = 900;
+        const BIND_BLOCK_START = 0.28;
+        const BIND_BLOCK_END = 0.65;
+        const BIND_DELAY = 900;
+
+        if (state.rubberBindDelayTimer > 0) {
+          state.rubberBindDelayTimer = Math.max(0, state.rubberBindDelayTimer - dt);
+          if (state.rubberBindDelayTimer <= 0) {
+            state.rubberBindBandIndex++;
+            if (state.rubberBindBandIndex >= 3) {
+              state.pullbackTimer = 1200;
+              state.bossAttackName = 'PULLBACK!';
+              this.transitionTo('pullback');
+            } else {
+              state.attackProjectileT = 0;
+              state.playerBlocked = false;
+              state.blockWindowOpen = false;
+            }
+          }
+          break;
+        }
+
+        state.attackProjectileT = Math.min(1, state.attackProjectileT + dt / BIND_TRAVEL);
+
+        if (!state.marioTied && state.attackProjectileT >= BIND_BLOCK_START && state.attackProjectileT < BIND_BLOCK_END) {
+          state.blockWindowOpen = true;
+        } else {
+          state.blockWindowOpen = false;
+        }
+
+        if (state.attackProjectileT >= 1) {
+          state.blockWindowOpen = false;
+          if (state.playerBlocked) {
+            this.spawnFlash('player', '#44aaff');
+          } else {
+            if (!state.marioTied) {
+              state.marioTied = true;
+              state.rubberBindPermanentDmg += 3;
+            }
+            const bindDmgTable: number[] = [8, 7, 7, 6];
+            const rawDmg = bindDmgTable[Math.min(3, state.marioFinalRing)];
+            const actualDmg = this.applyGuardReduction(rawDmg);
+            state.playerHp = Math.max(0, state.playerHp - actualDmg);
+            state.lastBossDamage = actualDmg;
+            const gapRad = (1.5 * Math.PI) / 180;
+            const arcSpan = (2 * Math.PI) / 12;
+            const startAngle = (state.marioFinalSlot / 12) * Math.PI * 2 - Math.PI / 2 + gapRad / 2;
+            const midAngle = startAngle + (arcSpan - gapRad) / 2;
+            const midR = BOSS_RADIUS + (state.marioFinalRing + 0.5) * RING_WIDTH;
+            const mpx = RING_CX + Math.cos(midAngle) * midR;
+            const mpy = RING_CY + Math.sin(midAngle) * midR;
+            state.damageNumbers.push({
+              value: actualDmg, x: mpx, y: mpy - 30,
+              alpha: 1, vy: -2, color: '#ff4444', scale: 1.4,
+              label: 'TIED!', effectType: 'damage',
+            });
+            this.spawnFlash('player', '#ff4400');
+            if (state.playerHp <= 0) {
+              this.transitionTo('game_over');
+              break;
+            }
+          }
+          state.rubberBindDelayTimer = BIND_DELAY;
+        }
+        break;
+      }
+
+      case 'trapped_snapback': {
+        state.trappedSnapbackTimer = Math.max(0, state.trappedSnapbackTimer - dt);
+        if (state.trappedSnapbackTimer <= 0) {
+          const snapRanges: [number, number][] = [[20, 25], [16, 21], [14, 19], [12, 17]];
+          const [minDmg, maxDmg] = snapRanges[Math.min(3, state.marioFinalRing)];
+          const rawDmg = minDmg + Math.floor(Math.random() * (maxDmg - minDmg + 1));
+          const actualDmg = rawDmg; // unblockable, no guard reduction
+          state.playerHp = Math.max(0, state.playerHp - actualDmg);
+          state.lastBossDamage = actualDmg;
+          const gapRad = (1.5 * Math.PI) / 180;
+          const arcSpan = (2 * Math.PI) / 12;
+          const startAngle = (state.marioFinalSlot / 12) * Math.PI * 2 - Math.PI / 2 + gapRad / 2;
+          const midAngle = startAngle + (arcSpan - gapRad) / 2;
+          const midR = BOSS_RADIUS + (state.marioFinalRing + 0.5) * RING_WIDTH;
+          const mpx = RING_CX + Math.cos(midAngle) * midR;
+          const mpy = RING_CY + Math.sin(midAngle) * midR;
+          state.damageNumbers.push({
+            value: actualDmg, x: mpx, y: mpy - 30,
+            alpha: 1, vy: -3, color: '#ff2200', scale: 2.0,
+            label: 'SNAPBACK!', effectType: 'damage',
+          });
+          this.spawnFlash('player', '#ff0000');
+          state.marioTied = false;
+          state.bossAttackName = '';
+          if (state.playerHp <= 0) {
+            this.transitionTo('game_over');
+          } else {
+            state.pullbackTimer = 1200;
+            state.bossAttackName = 'PULLBACK!';
+            this.transitionTo('pullback');
+          }
+        }
+        break;
+      }
+
       case 'puzzle':
         state.puzzleTimer -= dt;
         if (state.puzzleTimer <= 0) {
@@ -1395,8 +1543,7 @@ export class Game {
         const path = state.marioWalkPath;
         if (path.length === 0) {
           // No path at all — go straight to boss attack
-          this.transitionTo('boss_attack');
-          this.doBossAttack();
+          this.startEnemyTurn();
           break;
         }
 
@@ -1571,8 +1718,7 @@ export class Game {
               if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') {
                 this.bossSpecialPending = true;
               }
-              this.transitionTo('boss_attack');
-              this.doBossAttack();
+              this.startEnemyTurn();
             }
           }
         }
@@ -1624,8 +1770,7 @@ export class Game {
           if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') {
             this.bossSpecialPending = true;
           }
-          this.transitionTo('boss_attack');
-          this.doBossAttack();
+          this.startEnemyTurn();
         }
         break;
       }
@@ -1675,19 +1820,12 @@ export class Game {
           if (state.playerHp <= 0) {
             this.transitionTo('game_over');
           } else {
-            if (state.bossIndex === 1) {
-              // Pullback phase before new turn
-              state.pullbackTimer = 1200;
-              state.bossAttackName = 'PULLBACK!';
-              this.transitionTo('pullback');
-            } else {
-              if (this.bossSpecialPending) {
-                if (state.boss.special === 'hole_punch' || state.boss.special === 'tape') applyHolePunchSpecial(state.rings);
-                if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') applyOrigamiKingSpecial(state.rings);
-                this.bossSpecialPending = false;
-              }
-              this.transitionTo('setup');
+            if (this.bossSpecialPending) {
+              if (state.boss.special === 'hole_punch' || state.boss.special === 'tape') applyHolePunchSpecial(state.rings);
+              if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') applyOrigamiKingSpecial(state.rings);
+              this.bossSpecialPending = false;
             }
+            this.transitionTo('setup');
           }
           break;
         }
@@ -1830,8 +1968,7 @@ export class Game {
       case 'pullback': {
         state.pullbackTimer = Math.max(0, state.pullbackTimer - dt);
         if (state.pullbackTimer <= 0) {
-          // Restore boss HP based on remaining rubber bands
-          state.boss.hp = state.rubberBandCount * state.rubberBandHpPerBand;
+          state.boss.hp = Math.max(0, state.rubberBandCount * state.rubberBandHpPerBand - state.rubberBindPermanentDmg);
           state.bossAttackName = '';
           this.transitionTo('setup');
         }

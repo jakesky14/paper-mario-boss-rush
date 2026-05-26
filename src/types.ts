@@ -26,6 +26,8 @@ export type Phase =
   | 'rainbow_roll_attack'
   | 'pullback'
   | 'bumper_bands'
+  | 'rubber_bind'
+  | 'trapped_snapback'
   | 'save_prompt'
   | 'victory'
   | 'game_over';
@@ -221,6 +223,11 @@ export interface GameState {
   rubberBandCount: number;
   rubberBandHpPerBand: number;
   pullbackTimer: number;
+  marioTied: boolean;
+  rubberBindBandIndex: number;   // 0-2, which band is currently flying
+  rubberBindDelayTimer: number;  // ms pause between bands after impact
+  rubberBindPermanentDmg: number; // accumulated permanent HP loss to boss (not restored by pullback)
+  trappedSnapbackTimer: number;  // countdown timer for trapped_snapback phase
 }
 
 export interface TargetedPanel {
