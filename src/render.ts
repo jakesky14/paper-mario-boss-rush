@@ -1094,8 +1094,8 @@ function getPhaseHint(state: GameState): string {
       return 'Line up a Magic Circle to grab the band!';
     case 'solo_grab_attempt': {
       const sub = state.soloGrabSubPhase;
-      if (sub === 'moving') return 'Wait for the band to slow down...';
-      return 'PRESS SPACE to grip the band!';
+      if (sub === 'moving') return 'Wait for the band to stop...';
+      return sub === 'paused_left' ? 'Press ← to grip!' : 'Press → to grip!';
     }
     case 'solo_snapback_attack':
       return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'SOLO SNAPBACK incoming!';
@@ -3287,7 +3287,6 @@ function drawBumperBands(ctx: CanvasRenderingContext2D, state: GameState): void 
   ctx.fillStyle = '#ffdd88';
   ctx.font = '13px monospace';
   ctx.fillText('Rubber Band is launching bands onto the rings!', CANVAS_W / 2, 360);
-  ctx.fillText(`${state.rubberBandCount} bands active — use 1000-Fold Arms!`, CANVAS_W / 2, 378);
   ctx.restore();
 }
 
@@ -3346,21 +3345,27 @@ function drawSoloPhase(ctx: CanvasRenderingContext2D, state: GameState, tick: nu
     const bandOffsetX = state.soloGrabBandPos * 35;
     drawBoss1Solo(ctx, bCX + bandOffsetX, bCY, 90, tick);
 
-    // Pause direction arrow
+    // Pause direction prompt — press matching arrow key
     if (state.soloGrabSubPhase === 'paused_left' || state.soloGrabSubPhase === 'paused_right') {
       const blink = Math.floor(Date.now() / 250) % 2 === 0;
+      ctx.save();
+      ctx.textAlign = 'center';
+      // Static "PRESS" label
+      ctx.fillStyle = '#ffdd44';
+      ctx.font = 'bold 20px monospace';
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+      ctx.strokeText('PRESS', bCX + bandOffsetX, bCY - 148);
+      ctx.fillText('PRESS', bCX + bandOffsetX, bCY - 148);
+      // Blinking arrow
       if (blink) {
-        ctx.save();
         ctx.fillStyle = '#44ff88';
-        ctx.font = 'bold 38px monospace';
-        ctx.textAlign = 'center';
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 5;
-        const arrow = state.soloGrabSubPhase === 'paused_left' ? '← GRIP!' : 'GRIP! →';
-        ctx.strokeText(arrow, bCX + bandOffsetX, bCY - 120);
-        ctx.fillText(arrow, bCX + bandOffsetX, bCY - 120);
-        ctx.restore();
+        ctx.font = 'bold 52px monospace';
+        ctx.lineWidth = 6;
+        const arrow = state.soloGrabSubPhase === 'paused_left' ? '←' : '→';
+        ctx.strokeText(arrow, bCX + bandOffsetX, bCY - 108);
+        ctx.fillText(arrow, bCX + bandOffsetX, bCY - 108);
       }
+      ctx.restore();
     }
   } else if (phase === 'solo_snapback_attack') {
     const t = state.soloSnapbackAttackT;

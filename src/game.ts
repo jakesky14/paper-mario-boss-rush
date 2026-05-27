@@ -109,6 +109,7 @@ export class Game {
       mainMenuCursor: 'fight',
       howToPlayPage: 0,
       shopCursor: 0,
+      ringHistory: [],
       accessories: {
         heartPlus: false,
         silverHeartPlus: false,
@@ -299,7 +300,18 @@ export class Game {
     }
   }
 
+  private snapshotRings(): import('./types').PanelType[] {
+    return this.state.rings.flatMap(r => [...r.panels]);
+  }
+
+  private restoreRingsFromSnapshot(snapshot: import('./types').PanelType[]): void {
+    for (let r = 0; r < 4; r++) {
+      this.state.rings[r].panels = snapshot.slice(r * 12, (r + 1) * 12) as import('./types').PanelType[];
+    }
+  }
+
   private startNewTurn(): void {
+    this.state.ringHistory = [];
     this.state.rings = createRings(this.state.boss.panels);
     if (this.state.bossIndex === 0) {
       ensureBacksideReachable(this.state.rings);
@@ -761,11 +773,19 @@ export class Game {
       return;
     }
 
-    // solo_grab_attempt key handling — Space during pause grips the band
+    // solo_grab_attempt key handling — press matching arrow key when band pauses
     if (phase === 'solo_grab_attempt') {
       const sub = this.state.soloGrabSubPhase;
-      if (e.code === 'Space' && (sub === 'paused_left' || sub === 'paused_right') && !this.state.soloGrabGripped) {
-        this.state.soloGrabGripped = true;
+      if (!this.state.soloGrabGripped && (sub === 'paused_left' || sub === 'paused_right')) {
+        const correct = sub === 'paused_left' ? 'ArrowLeft' : 'ArrowRight';
+        if (e.key === correct) {
+          e.preventDefault();
+          this.state.soloGrabGripped = true;
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          // Wrong direction — immediately count as missed pause
+          e.preventDefault();
+          this.state.soloGrabPauseTimer = 0;
+        }
       }
       return;
     }
@@ -811,6 +831,8 @@ export class Game {
         this.state.puzzleControlMode = 'ring_edit';
       } else if (e.key === 'z' || e.key === 'Z') {
         this.state.puzzleControlMode = 'column_select';
+      } else if (e.key === 'x' || e.key === 'X') {
+        this.doUndo();
       }
     } else if (mode === 'ring_edit') {
       if (e.key === 'ArrowLeft') {
@@ -822,7 +844,7 @@ export class Game {
       } else if (e.key === 'Enter') {
         this.state.puzzleControlMode = 'ring_select';
       } else if (e.key === 'x' || e.key === 'X') {
-        this.state.puzzleControlMode = 'ring_select';
+        this.doUndo();
       }
     } else if (mode === 'column_select') {
       if (e.key === 'ArrowLeft') {
@@ -837,6 +859,8 @@ export class Game {
         this.state.puzzleControlMode = 'column_edit';
       } else if (e.key === 'z' || e.key === 'Z') {
         this.state.puzzleControlMode = 'ring_select';
+      } else if (e.key === 'x' || e.key === 'X') {
+        this.doUndo();
       }
     } else if (mode === 'column_edit') {
       if (e.key === 'ArrowUp') {
@@ -848,7 +872,7 @@ export class Game {
       } else if (e.key === 'Enter') {
         this.state.puzzleControlMode = 'column_select';
       } else if (e.key === 'x' || e.key === 'X') {
-        this.state.puzzleControlMode = 'column_select';
+        this.doUndo();
       }
     }
   }
@@ -913,6 +937,9 @@ export class Game {
       this.state.movesLeft--;
     }
 
+    this.state.ringHistory.push(this.snapshotRings());
+    if (this.state.ringHistory.length > 20) this.state.ringHistory.shift();
+
     this.state.rotationAnim = {
       ringIndex: this.state.selectedRing,
       direction,
@@ -936,6 +963,9 @@ export class Game {
       this.state.movesLeft--;
     }
 
+    this.state.ringHistory.push(this.snapshotRings());
+    if (this.state.ringHistory.length > 20) this.state.ringHistory.shift();
+
     this.state.slideAnim = {
       column: this.state.selectedColumn,
       direction,
@@ -944,6 +974,16 @@ export class Game {
       elapsed: 0,
     };
     slideColumn(this.state.rings, this.state.selectedColumn, direction);
+  }
+
+  private doUndo(): void {
+    if (this.state.phase !== 'puzzle') return;
+    const snapshot = this.state.ringHistory.pop();
+    if (!snapshot) return;
+    this.restoreRingsFromSnapshot(snapshot);
+    this.state.movesLeft = Math.min(this.state.maxMoves, this.state.movesLeft + 1);
+    this.state.rotationAnim = null;
+    this.state.slideAnim = null;
   }
 
   private endPuzzlePhase(): void {

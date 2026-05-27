@@ -61,6 +61,8 @@ export function createRings(dist) {
                 rings[r].panels[c] = 'empty';
         }
     }
+    // Guarantee Mario can reach an action panel from his start slot
+    ensureActionReachable(rings);
     return rings;
 }
 export function shuffleArray(arr) {
@@ -355,6 +357,38 @@ export function ensureBacksideReachable(rings) {
     for (let i = 0; i < candidates.length && replaced < needed; i++) {
         outerRing.panels[candidates[i]] = 'arrow_right';
         replaced++;
+    }
+}
+// Guarantee Mario can reach an action panel from his start position.
+// Simulates the path; if no action panel is found, places one at the path endpoint
+// (or on the innermost ring if the endpoint is on an outer ring).
+export function ensureActionReachable(rings, startSlot = 6) {
+    const path = simulatePath(rings, 3, startSlot, false);
+    const hasAction = path.some(s => s.panel === 'action');
+    if (hasAction)
+        return;
+    // Find path endpoint
+    const last = path[path.length - 1];
+    if (last && last.ring <= 1) {
+        rings[last.ring].panels[last.slot] = 'action';
+        return;
+    }
+    // Endpoint is on outer ring — find any empty slot on ring 0 or 1 and place there
+    for (const r of [0, 1]) {
+        for (let c = 0; c < NUM_PANELS; c++) {
+            if (rings[r].panels[c] === 'empty') {
+                rings[r].panels[c] = 'action';
+                return;
+            }
+        }
+    }
+    // Fallback: overwrite the first non-special panel on ring 0
+    const keep = ['magic_circle', 'on_panel', 'plus_one', 'double_power'];
+    for (let c = 0; c < NUM_PANELS; c++) {
+        if (!keep.includes(rings[0].panels[c])) {
+            rings[0].panels[c] = 'action';
+            return;
+        }
     }
 }
 // Apply Hole Punch special: replace 4 random panels with empty

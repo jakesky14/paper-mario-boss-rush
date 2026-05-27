@@ -200,6 +200,7 @@ export interface GameState {
   mainMenuCursor: 'fight' | 'restart' | 'shop' | 'how_to_play';
   howToPlayPage: number;
   shopCursor: number;
+  ringHistory: PanelType[][];
   accessories: AccessoryInventory;
   maxUpHeartsInStock: number;
   maxUpHeartsBought: number;

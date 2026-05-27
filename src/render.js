@@ -933,8 +933,8 @@ function getPhaseHint(state) {
         case 'solo_grab_attempt': {
             const sub = state.soloGrabSubPhase;
             if (sub === 'moving')
-                return 'Wait for the band to slow down...';
-            return 'PRESS SPACE to grip the band!';
+                return 'Wait for the band to stop...';
+            return sub === 'paused_left' ? 'Press ← to grip!' : 'Press → to grip!';
         }
         case 'solo_snapback_attack':
             return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'SOLO SNAPBACK incoming!';
@@ -1488,10 +1488,12 @@ export function drawMainMenu(ctx, state) {
     const fightSel = state.mainMenuCursor === 'fight';
     const restartSel = state.mainMenuCursor === 'restart';
     const shopSel = state.mainMenuCursor === 'shop';
+    const htpSel = state.mainMenuCursor === 'how_to_play';
     const buttons = [
-        { label: 'FIGHT', selLabel: '▶ FIGHT ◀', sel: fightSel, y: 280, color: '#cccccc', selColor: '#ffdd44' },
-        { label: 'RESTART GAME', selLabel: '▶ RESTART GAME ◀', sel: restartSel, y: 358, color: '#cccccc', selColor: '#ff8888' },
-        { label: 'SHOP', selLabel: '▶ SHOP ◀', sel: shopSel, y: 436, color: '#cccccc', selColor: '#ffdd44' },
+        { label: 'FIGHT', selLabel: '▶ FIGHT ◀', sel: fightSel, y: 245, color: '#cccccc', selColor: '#ffdd44' },
+        { label: 'RESTART GAME', selLabel: '▶ RESTART GAME ◀', sel: restartSel, y: 315, color: '#cccccc', selColor: '#ff8888' },
+        { label: 'SHOP', selLabel: '▶ SHOP ◀', sel: shopSel, y: 385, color: '#cccccc', selColor: '#ffdd44' },
+        { label: 'HOW TO PLAY', selLabel: '▶ HOW TO PLAY ◀', sel: htpSel, y: 455, color: '#cccccc', selColor: '#88ddff' },
     ];
     for (const btn of buttons) {
         ctx.fillStyle = btn.sel ? `rgba(255,221,68,0.2)` : 'rgba(0,0,0,0.3)';
@@ -1523,6 +1525,183 @@ export function drawMainMenu(ctx, state) {
     ctx.font = '16px monospace';
     ctx.lineWidth = 0;
     ctx.fillText('↑ ↓ — navigate     ENTER / SPACE — select', CANVAS_W / 2, CANVAS_H - 25);
+}
+export function drawHowToPlay(ctx, state) {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    // Subtle grid background
+    ctx.strokeStyle = 'rgba(80,80,160,0.15)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < CANVAS_W; x += 40) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, CANVAS_H);
+        ctx.stroke();
+    }
+    for (let y = 0; y < CANVAS_H; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(CANVAS_W, y);
+        ctx.stroke();
+    }
+    const page = state.howToPlayPage;
+    const PAGES = 2;
+    // Header
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#88ddff';
+    ctx.font = 'bold 32px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
+    ctx.strokeText('HOW TO PLAY', CANVAS_W / 2, 42);
+    ctx.fillText('HOW TO PLAY', CANVAS_W / 2, 42);
+    // Page indicators
+    for (let i = 0; i < PAGES; i++) {
+        ctx.beginPath();
+        ctx.arc(CANVAS_W / 2 - (PAGES - 1) * 14 + i * 28, 62, 7, 0, Math.PI * 2);
+        ctx.fillStyle = i === page ? '#88ddff' : '#334455';
+        ctx.fill();
+        ctx.strokeStyle = '#88ddff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+    ctx.textAlign = 'left';
+    ctx.lineWidth = 0;
+    // ── PAGE 0: CONTROLS ─────────────────────────────────────────────────────
+    if (page === 0) {
+        const col1 = 60, col2 = 490;
+        // Section: Puzzle Controls
+        ctx.fillStyle = '#ffdd44';
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText('PUZZLE CONTROLS', col1, 105);
+        ctx.fillStyle = '#334455';
+        ctx.fillRect(col1, 110, 380, 2);
+        const puzzleControls = [
+            ['↑ / ↓', 'Select ring (inner → outer)'],
+            ['← / →', 'Rotate selected ring CW/CCW'],
+            ['Z', 'Switch to column slide mode'],
+            ['↑ / ↓  (col)', 'Slide column inward/outward'],
+            ['X', 'Undo ring selection'],
+            ['SHIFT', 'End puzzle & walk'],
+        ];
+        ctx.font = '15px monospace';
+        puzzleControls.forEach(([key, desc], i) => {
+            const y = 136 + i * 34;
+            ctx.fillStyle = '#88ddff';
+            ctx.fillText(key, col1 + 8, y);
+            ctx.fillStyle = '#cccccc';
+            ctx.fillText(desc, col1 + 155, y);
+        });
+        // Section: Combat Controls
+        ctx.fillStyle = '#ffdd44';
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText('COMBAT CONTROLS', col2, 105);
+        ctx.fillStyle = '#334455';
+        ctx.fillRect(col2, 110, 360, 2);
+        const combatControls = [
+            ['J', 'Jump attack'],
+            ['H', 'Hammer attack'],
+            ['SPACE', 'Timing press (action windows)'],
+            ['SPACE', 'Block incoming attacks'],
+            ['SPACE', 'Mash during 1000-Fold Arms'],
+            ['↓ held', 'Pull / slingshot charge'],
+        ];
+        ctx.font = '15px monospace';
+        combatControls.forEach(([key, desc], i) => {
+            const y = 136 + i * 34;
+            ctx.fillStyle = '#88ddff';
+            ctx.fillText(key, col2 + 8, y);
+            ctx.fillStyle = '#cccccc';
+            ctx.fillText(desc, col2 + 118, y);
+        });
+        // Section: Attack Timing
+        ctx.fillStyle = '#ffdd44';
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText('ATTACK TIMING', col1, 368);
+        ctx.fillStyle = '#334455';
+        ctx.fillRect(col1, 373, 790, 2);
+        const timings = [
+            ['EXCELLENT', '#ffdd00', 'Press SPACE exactly as Mario lands/swings — maximum damage'],
+            ['GREAT', '#88ff44', 'Press SPACE slightly early or late — bonus damage'],
+            ['NICE', '#44ddff', 'Press SPACE within the timing window — small bonus'],
+            ['(miss)', '#888888', 'No press or too early/late — base damage only'],
+        ];
+        ctx.font = '15px monospace';
+        timings.forEach(([label, color, desc], i) => {
+            const y = 400 + i * 34;
+            ctx.fillStyle = color;
+            ctx.font = 'bold 15px monospace';
+            ctx.fillText(label, col1 + 8, y);
+            ctx.fillStyle = '#cccccc';
+            ctx.font = '15px monospace';
+            ctx.fillText(desc, col1 + 160, y);
+        });
+        // Section: General
+        ctx.fillStyle = '#ffdd44';
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText('GENERAL', col1, 545);
+        ctx.fillStyle = '#334455';
+        ctx.fillRect(col1, 550, 790, 2);
+        const general = [
+            ['P / ESC', 'Pause / unpause'],
+            ['Click', 'Pause button (top-right corner)'],
+        ];
+        ctx.font = '15px monospace';
+        general.forEach(([key, desc], i) => {
+            const y = 576 + i * 30;
+            ctx.fillStyle = '#88ddff';
+            ctx.fillText(key, col1 + 8, y);
+            ctx.fillStyle = '#cccccc';
+            ctx.fillText(desc, col1 + 155, y);
+        });
+    }
+    // ── PAGE 1: PANELS ───────────────────────────────────────────────────────
+    if (page === 1) {
+        ctx.fillStyle = '#ffdd44';
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText('RING PANELS', 60, 105);
+        ctx.fillStyle = '#334455';
+        ctx.fillRect(60, 110, 780, 2);
+        const panels = [
+            ['#ff4444', '▲ ARROW UP', 'Move Mario one ring inward'],
+            ['#4488ff', '▼ ARROW DOWN', 'Move Mario one ring outward'],
+            ['#4488ff', '◀ ARROW LEFT', 'Move Mario one slot counter-clockwise'],
+            ['#4488ff', '▶ ARROW RIGHT', 'Move Mario one slot clockwise'],
+            ['#ff4444', '★ ACTION', 'Mario stops here — choose Jump or Hammer attack'],
+            ['#ff88ff', '◉ ON PANEL', 'Activates magic circles encountered later on this path'],
+            ['#ffdd00', '✦ MAGIC CIRCLE', 'If ON activated: 1000-Fold Arms! Otherwise Mario passes through'],
+            ['#88ff44', '＋1 PLUS ONE', 'Mario attacks twice this turn'],
+            ['#ff8800', '×2 DOUBLE POWER', 'Damage is multiplied by 2 this turn'],
+            ['#ffcc44', '🎁 TREASURE', 'Opens a chest — grants bonus coins'],
+            ['#aaffcc', '✉ ENVELOPE', 'Displays a gameplay tip for this encounter'],
+            ['#ffdd88', '◎ COIN', 'Collected coins add bonus damage on the final attack'],
+            ['#888888', '— EMPTY', 'Mario continues in his last direction (momentum)'],
+        ];
+        const col1 = 70, col2 = 490;
+        ctx.font = '14px monospace';
+        panels.forEach(([color, name, desc], i) => {
+            const col = i < 7 ? col1 : col2;
+            const row = i < 7 ? i : i - 7;
+            const y = 140 + row * 66;
+            // Color swatch
+            ctx.fillStyle = color;
+            ctx.fillRect(col, y - 16, 18, 18);
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(col, y - 16, 18, 18);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px monospace';
+            ctx.fillText(name, col + 26, y - 2);
+            ctx.fillStyle = '#aaaaaa';
+            ctx.font = '13px monospace';
+            ctx.fillText(desc, col + 26, y + 15);
+        });
+    }
+    // Footer
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#556677';
+    ctx.font = '14px monospace';
+    const nav = page === 0 ? '→ Next page' : '← Prev page';
+    ctx.fillText(`${nav}     |     ESC / ENTER — back to menu`, CANVAS_W / 2, CANVAS_H - 18);
 }
 export function drawShop(ctx, state) {
     drawBgImage(ctx, _shopBg, '#8b4513');
@@ -2702,7 +2881,6 @@ function drawBumperBands(ctx, state) {
     ctx.fillStyle = '#ffdd88';
     ctx.font = '13px monospace';
     ctx.fillText('Rubber Band is launching bands onto the rings!', CANVAS_W / 2, 360);
-    ctx.fillText(`${state.rubberBandCount} bands active — use 1000-Fold Arms!`, CANVAS_W / 2, 378);
     ctx.restore();
 }
 function drawSoloPhase(ctx, state, tick) {
@@ -2755,21 +2933,28 @@ function drawSoloPhase(ctx, state, tick) {
         // Band oscillates or stays at pause position
         const bandOffsetX = state.soloGrabBandPos * 35;
         drawBoss1Solo(ctx, bCX + bandOffsetX, bCY, 90, tick);
-        // Pause direction arrow
+        // Pause direction prompt — press matching arrow key
         if (state.soloGrabSubPhase === 'paused_left' || state.soloGrabSubPhase === 'paused_right') {
             const blink = Math.floor(Date.now() / 250) % 2 === 0;
+            ctx.save();
+            ctx.textAlign = 'center';
+            // Static "PRESS" label
+            ctx.fillStyle = '#ffdd44';
+            ctx.font = 'bold 20px monospace';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.strokeText('PRESS', bCX + bandOffsetX, bCY - 148);
+            ctx.fillText('PRESS', bCX + bandOffsetX, bCY - 148);
+            // Blinking arrow
             if (blink) {
-                ctx.save();
                 ctx.fillStyle = '#44ff88';
-                ctx.font = 'bold 38px monospace';
-                ctx.textAlign = 'center';
-                ctx.strokeStyle = '#000';
-                ctx.lineWidth = 5;
-                const arrow = state.soloGrabSubPhase === 'paused_left' ? '← GRIP!' : 'GRIP! →';
-                ctx.strokeText(arrow, bCX + bandOffsetX, bCY - 120);
-                ctx.fillText(arrow, bCX + bandOffsetX, bCY - 120);
-                ctx.restore();
+                ctx.font = 'bold 52px monospace';
+                ctx.lineWidth = 6;
+                const arrow = state.soloGrabSubPhase === 'paused_left' ? '←' : '→';
+                ctx.strokeText(arrow, bCX + bandOffsetX, bCY - 108);
+                ctx.fillText(arrow, bCX + bandOffsetX, bCY - 108);
             }
+            ctx.restore();
         }
     }
     else if (phase === 'solo_snapback_attack') {
@@ -3124,6 +3309,9 @@ export function render(ctx, state, tick) {
             return;
         case 'main_menu':
             drawMainMenu(ctx, state);
+            return;
+        case 'how_to_play':
+            drawHowToPlay(ctx, state);
             return;
         case 'shop':
             drawShop(ctx, state);
