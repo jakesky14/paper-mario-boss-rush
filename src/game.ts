@@ -107,6 +107,7 @@ export class Game {
       testingMode: false,
       coins: 1000,
       mainMenuCursor: 'fight',
+      howToPlayPage: 0,
       shopCursor: 0,
       accessories: {
         heartPlus: false,
@@ -471,12 +472,12 @@ export class Game {
     if (phase === 'main_menu') {
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        const order: Array<typeof this.state.mainMenuCursor> = ['fight', 'restart', 'shop'];
+        const order: Array<typeof this.state.mainMenuCursor> = ['fight', 'restart', 'shop', 'how_to_play'];
         const idx = order.indexOf(this.state.mainMenuCursor);
         this.state.mainMenuCursor = order[(idx - 1 + order.length) % order.length];
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        const order: Array<typeof this.state.mainMenuCursor> = ['fight', 'restart', 'shop'];
+        const order: Array<typeof this.state.mainMenuCursor> = ['fight', 'restart', 'shop', 'how_to_play'];
         const idx = order.indexOf(this.state.mainMenuCursor);
         this.state.mainMenuCursor = order[(idx + 1) % order.length];
       } else if (e.code === 'Space' || e.key === 'Enter') {
@@ -498,9 +499,25 @@ export class Game {
           this.state.playerHp = this.state.playerMaxHp;
           this.state.phase = 'boss_intro';
           this.state.introTimer = INTRO_DURATION;
-        } else {
+        } else if (this.state.mainMenuCursor === 'shop') {
           this.transitionTo('shop');
+        } else {
+          this.state.howToPlayPage = 0;
+          this.transitionTo('how_to_play');
         }
+      }
+      return;
+    }
+
+    if (phase === 'how_to_play') {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        this.state.howToPlayPage = Math.min(2, this.state.howToPlayPage + 1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        this.state.howToPlayPage = Math.max(0, this.state.howToPlayPage - 1);
+      } else if (e.key === 'Escape' || e.key === 'Backspace' || e.code === 'Space' || e.key === 'Enter') {
+        this.transitionTo('main_menu');
       }
       return;
     }
@@ -1589,6 +1606,7 @@ export class Game {
 
       case 'main_menu':
       case 'shop':
+      case 'how_to_play':
         break;
 
       case 'boss_intro':

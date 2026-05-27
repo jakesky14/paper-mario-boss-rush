@@ -35,6 +35,7 @@ export type Phase =
   | 'solo_snapback_attack'
   | 'solo_slam'
   | 'solo_slingshot'
+  | 'how_to_play'
   | 'save_prompt'
   | 'victory'
   | 'game_over';
@@ -196,7 +197,8 @@ export interface GameState {
 
   // Persistent progression (survives between runs)
   coins: number;
-  mainMenuCursor: 'fight' | 'restart' | 'shop';
+  mainMenuCursor: 'fight' | 'restart' | 'shop' | 'how_to_play';
+  howToPlayPage: number;
   shopCursor: number;
   accessories: AccessoryInventory;
   maxUpHeartsInStock: number;
