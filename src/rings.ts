@@ -54,8 +54,19 @@ export function createRings(dist: PanelDistribution): RingState[] {
     }
   }
 
-  // Guarantee Mario can reach an action panel from his start slot
-  ensureActionReachable(rings);
+  // Magic circle never on outermost ring — move any to inner rings
+  for (let c = 0; c < NUM_PANELS; c++) {
+    if (rings[3].panels[c] === 'magic_circle') {
+      rings[3].panels[c] = 'empty';
+      for (const r of [0, 1, 2]) {
+        const emptySlot = rings[r].panels.findIndex(p => p === 'empty');
+        if (emptySlot >= 0) {
+          rings[r].panels[emptySlot] = 'magic_circle';
+          break;
+        }
+      }
+    }
+  }
 
   return rings;
 }
@@ -195,6 +206,17 @@ export function simulatePath(rings: RingState[], startRing = 3, startSlot = 6, m
       else { slot = (slot + 1) % 12; }
     } else if (panel === 'envelope') {
       steps.push({ ring, slot, panel, pauseMs: 600 });
+      if (lastDir === 'up') { if (ring === 0) break; ring--; }
+      else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
+      else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }
+      else { slot = (slot + 1) % 12; }
+    } else if (panel === 'hole') {
+      // Mario falls into the hole — path ends here
+      steps.push({ ring, slot, panel, pauseMs: 400 });
+      break;
+    } else if (panel === 'on_panel_holed') {
+      // Holed ON panel — Mario passes through without activating magic circle
+      steps.push({ ring, slot, panel, pauseMs: 0 });
       if (lastDir === 'up') { if (ring === 0) break; ring--; }
       else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
       else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }

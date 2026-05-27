@@ -155,6 +155,10 @@ export class Game {
             soloSlingshotLaunched: false,
             soloSlingshotT: 0,
             soloSnapbackAttackT: 0,
+            pendingBossPhase: 'boss_attack',
+            enemyTurnAnnounceTimer: 0,
+            soloGrabHandsCursor: 0,
+            holePunchAttackTimer: 0,
         };
     }
     resetForBoss(bossIndex) {
@@ -267,6 +271,10 @@ export class Game {
         this.state.soloSlingshotLaunched = false;
         this.state.soloSlingshotT = 0;
         this.state.soloSnapbackAttackT = 0;
+        this.state.pendingBossPhase = 'boss_attack';
+        this.state.enemyTurnAnnounceTimer = 0;
+        this.state.soloGrabHandsCursor = 0;
+        this.state.holePunchAttackTimer = 0;
         if (bossIndex === 1) {
             this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
             this.state.boss.maxHp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
@@ -285,6 +293,13 @@ export class Game {
         this.state.rings = createRings(this.state.boss.panels);
         if (this.state.bossIndex === 0) {
             ensureBacksideReachable(this.state.rings);
+        }
+        // Boss 2 (Hole Punch): force ring 0 slots — on_panel at 6, empty at 4,5,7
+        if (this.state.bossIndex === 2) {
+            this.state.rings[0].panels[4] = 'empty';
+            this.state.rings[0].panels[5] = 'empty';
+            this.state.rings[0].panels[6] = 'on_panel';
+            this.state.rings[0].panels[7] = 'empty';
         }
         // Once boss 0 HP is at half or below, place magic circle every turn (until noReloadMode)
         if (this.state.bossIndex === 0 && this.state.boss.hp <= this.state.boss.maxHp / 2 && !this.state.noReloadMode) {
@@ -399,7 +414,8 @@ export class Game {
             'mario_mash', 'boss_attack', 'primary_target', 'pencil_cutscene', 'pencil_rain', 'snap_shut',
             'boss_reload', 'pencil_grab', 'rainbow_smash', 'rainbow_roll_attack', 'pullback', 'bumper_bands',
             'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback',
-            'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot'];
+            'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot',
+            'enemy_turn_announce', 'hole_punch_attack'];
         if ((e.key === 'p' || e.key === 'P') && fightPhases.includes(phase)) {
             e.preventDefault();
             this.state.paused = !this.state.paused;
@@ -769,19 +785,33 @@ export class Game {
             }
             return;
         }
-        // solo_grab_attempt key handling — press matching arrow key when band pauses
+        // solo_grab_attempt key handling — move cursor with ←/→, press Space to grip when aligned
         if (phase === 'solo_grab_attempt') {
-            const sub = this.state.soloGrabSubPhase;
-            if (!this.state.soloGrabGripped && (sub === 'paused_left' || sub === 'paused_right')) {
-                const correct = sub === 'paused_left' ? 'ArrowLeft' : 'ArrowRight';
-                if (e.key === correct) {
+            if (!this.state.soloGrabGripped) {
+                if (e.key === 'ArrowLeft') {
                     e.preventDefault();
-                    this.state.soloGrabGripped = true;
+                    this.state.soloGrabHandsCursor = Math.max(-3, this.state.soloGrabHandsCursor - 1);
                 }
-                else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-                    // Wrong direction — immediately count as missed pause
+                else if (e.key === 'ArrowRight') {
                     e.preventDefault();
-                    this.state.soloGrabPauseTimer = 0;
+                    this.state.soloGrabHandsCursor = Math.min(3, this.state.soloGrabHandsCursor + 1);
+                }
+                else if (e.code === 'Space') {
+                    e.preventDefault();
+                    const sub = this.state.soloGrabSubPhase;
+                    if (sub === 'paused_left' || sub === 'paused_right') {
+                        const targetPos = sub === 'paused_left' ? -3 : 3;
+                        if (Math.abs(this.state.soloGrabHandsCursor - targetPos) <= 1) {
+                            this.state.soloGrabGripped = true;
+                        }
+                        else {
+                            this.state.damageNumbers.push({
+                                value: 0, label: 'ALIGN FIRST!',
+                                x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -2, color: '#ff4444', scale: 1.3,
+                            });
+                            this.state.soloGrabPauseTimer = 0; // fail this attempt
+                        }
+                    }
                 }
             }
             return;
@@ -1016,7 +1046,7 @@ export class Game {
                 }
             }
             else {
-                if ((this.state.boss.special === 'hole_punch' || this.state.boss.special === 'tape') && this.state.turnNumber % 2 === 0) {
+                if (this.state.boss.special === 'tape' && this.state.turnNumber % 2 === 0) {
                     this.bossSpecialPending = true;
                 }
                 if (this.state.boss.special === 'origami_king' || this.state.boss.special === 'scissors') {
@@ -1043,18 +1073,54 @@ export class Game {
             target,
         });
     }
-    startEnemyTurn() {
-        if (this.state.bossIndex === 1) {
-            if (Math.random() < 0.5) {
-                this.startSnapback();
-            }
-            else {
-                this.startRubberBind();
-            }
+    announceEnemyTurn(phase) {
+        this.state.pendingBossPhase = phase;
+        this.state.enemyTurnAnnounceTimer = 3000;
+        this.transitionTo('enemy_turn_announce');
+    }
+    executeBossAttack() {
+        const phase = this.state.pendingBossPhase;
+        if (phase === 'snapback') {
+            this.startSnapback();
+        }
+        else if (phase === 'rubber_bind') {
+            this.startRubberBind();
+        }
+        else if (phase === 'solo_snapback_attack') {
+            this.startSoloSnapbackAttack();
         }
         else {
+            // boss_attack (default)
+            this.state.attackProjectileT = 0;
+            this.state.blockWindowOpen = false;
+            this.state.playerBlocked = false;
+            if (!this.state.bossAttackName) {
+                this.state.bossAttackName = this.state.boss.name.toUpperCase() + '!';
+            }
             this.transitionTo('boss_attack');
-            this.doBossAttack();
+        }
+    }
+    startSoloSnapbackAttack() {
+        this.state.soloSnapbackAttackT = 0;
+        this.state.blockWindowOpen = false;
+        this.state.playerBlocked = false;
+        this.state.snapbackBlocked = false;
+        this.state.bossAttackName = 'SOLO SNAPBACK!';
+        this.transitionTo('solo_snapback_attack');
+    }
+    startEnemyTurn() {
+        if (this.state.bossIndex === 1 && !this.state.rubberBandSoloMode) {
+            const nextPhase = Math.random() < 0.5 ? 'snapback' : 'rubber_bind';
+            this.state.bossAttackName = nextPhase === 'snapback' ? 'SNAPBACK!' : 'RUBBER BIND!';
+            this.announceEnemyTurn(nextPhase);
+        }
+        else if (this.state.bossIndex === 1 && this.state.rubberBandSoloMode) {
+            this.state.bossAttackName = 'SOLO SNAPBACK!';
+            this.announceEnemyTurn('solo_snapback_attack');
+        }
+        else {
+            this.state.bossAttackName = this.state.boss.name.toUpperCase() + '!';
+            this.announceEnemyTurn('boss_attack');
         }
     }
     startSnapback() {
@@ -1074,19 +1140,6 @@ export class Game {
         this.state.blockWindowOpen = false;
         this.state.playerBlocked = false;
         this.transitionTo('rubber_bind');
-    }
-    doBossAttack() {
-        this.state.attackProjectileT = 0;
-        this.state.blockWindowOpen = false;
-        this.state.playerBlocked = false;
-        if (!this.state.bossAttackName) {
-            if (this.state.bossIndex === 1) {
-                this.state.bossAttackName = 'RUBBER BIND!';
-            }
-            else {
-                this.state.bossAttackName = this.state.boss.name.toUpperCase() + '!';
-            }
-        }
     }
     startJumpAttack() {
         this.state.attackChoice = 'jump';
@@ -1120,7 +1173,7 @@ export class Game {
                 this.startPencilRain();
                 return;
             }
-            if ((this.state.boss.special === 'hole_punch' || this.state.boss.special === 'tape') && this.state.turnNumber % 2 === 0) {
+            if (this.state.boss.special === 'tape' && this.state.turnNumber % 2 === 0) {
                 this.bossSpecialPending = true;
             }
             if (this.state.boss.special === 'origami_king' || this.state.boss.special === 'scissors') {
@@ -1251,7 +1304,7 @@ export class Game {
                 return;
             }
         }
-        if ((this.state.boss.special === 'hole_punch' || this.state.boss.special === 'tape') && this.state.turnNumber % 2 === 0) {
+        if (this.state.boss.special === 'tape' && this.state.turnNumber % 2 === 0) {
             this.bossSpecialPending = true;
         }
         if (this.state.boss.special === 'origami_king' || this.state.boss.special === 'scissors') {
@@ -1674,6 +1727,7 @@ export class Game {
                         // Solo phase: show charge warning, then let Mario arrange a new magic circle
                         state.soloSnapbackChargeTimer = 3000;
                         state.bossAttackName = 'SOLO SNAPBACK CHARGING...';
+                        state.soloGrabHandsCursor = 0;
                         this.transitionTo('solo_snapback_charge');
                     }
                     else if (state.marioTied) {
@@ -1687,6 +1741,16 @@ export class Game {
                         this.transitionTo('bumper_bands');
                     }
                 }
+                else if (state.bossIndex === 2) {
+                    // Hole Punch: punch holes then show announcement before puzzle
+                    state.rings[0].panels[4] = 'hole';
+                    state.rings[0].panels[5] = 'hole';
+                    state.rings[0].panels[6] = 'on_panel_holed';
+                    state.rings[0].panels[7] = 'hole';
+                    state.holePunchAttackTimer = 2000;
+                    state.bossAttackName = 'HOLE PUNCH!';
+                    this.transitionTo('hole_punch_attack');
+                }
                 else {
                     this.transitionTo('puzzle');
                 }
@@ -1699,6 +1763,21 @@ export class Game {
                     this.transitionTo('puzzle');
                 }
                 break;
+            case 'enemy_turn_announce': {
+                state.enemyTurnAnnounceTimer = Math.max(0, state.enemyTurnAnnounceTimer - dt);
+                if (state.enemyTurnAnnounceTimer <= 0) {
+                    this.executeBossAttack();
+                }
+                break;
+            }
+            case 'hole_punch_attack': {
+                state.holePunchAttackTimer = Math.max(0, state.holePunchAttackTimer - dt);
+                if (state.holePunchAttackTimer <= 0) {
+                    state.bossAttackName = '';
+                    this.transitionTo('puzzle');
+                }
+                break;
+            }
             case 'bumper_bands': {
                 state.pullbackTimer = Math.max(0, state.pullbackTimer - dt);
                 if (state.pullbackTimer <= 0) {
@@ -1881,6 +1960,18 @@ export class Game {
                             }
                         }
                     }
+                    // Hole fall-in (boss 2)
+                    if (step.panel === 'hole') {
+                        state.marioFinalRing = step.ring;
+                        state.marioFinalSlot = step.slot;
+                        state.damageNumbers.push({
+                            value: 0, label: 'FELL IN!',
+                            x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2.5, color: '#ff4444', scale: 1.8,
+                        });
+                        this.spawnFlash('player', '#ff0000');
+                        this.startEnemyTurn();
+                        break;
+                    }
                     // Apply step effects
                     if (step.panel === 'heal') {
                         state.playerHp = Math.min(state.playerMaxHp, state.playerHp + 20);
@@ -2053,9 +2144,13 @@ export class Game {
                             state.attackChoice = 'pending';
                             this.transitionTo('attack_choice');
                         }
+                        else if (state.bossIndex === 1 && state.rubberBandSoloMode) {
+                            // Solo mode: Mario didn't reach magic circle — Rubber Band attacks
+                            this.startEnemyTurn();
+                        }
                         else {
                             // No action — go to boss attack with 0 player damage dealt
-                            if ((state.boss.special === 'hole_punch' || state.boss.special === 'tape') && state.turnNumber % 2 === 0) {
+                            if (state.boss.special === 'tape' && state.turnNumber % 2 === 0) {
                                 this.bossSpecialPending = true;
                             }
                             if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') {
@@ -2144,7 +2239,7 @@ export class Game {
                         this.handleBossDefeated();
                         break;
                     }
-                    if ((state.boss.special === 'hole_punch' || state.boss.special === 'tape') && state.turnNumber % 2 === 0) {
+                    if (state.boss.special === 'tape' && state.turnNumber % 2 === 0) {
                         this.bossSpecialPending = true;
                     }
                     if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') {
@@ -2184,7 +2279,7 @@ export class Game {
                     });
                     this.spawnFlash('player', state.playerBlocked ? '#44ff88' : '#ff0000');
                     // Specials
-                    if ((state.boss.special === 'hole_punch' || state.boss.special === 'tape') && state.turnNumber % 2 === 0) {
+                    if (state.boss.special === 'tape' && state.turnNumber % 2 === 0) {
                         this.bossSpecialPending = true;
                     }
                     if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') {
@@ -2196,7 +2291,7 @@ export class Game {
                     }
                     else {
                         if (this.bossSpecialPending) {
-                            if (state.boss.special === 'hole_punch' || state.boss.special === 'tape')
+                            if (state.boss.special === 'tape')
                                 applyHolePunchSpecial(state.rings);
                             if (state.boss.special === 'origami_king' || state.boss.special === 'scissors')
                                 applyOrigamiKingSpecial(state.rings);
@@ -2437,6 +2532,7 @@ export class Game {
                             state.soloGrabSubPhase = 'moving';
                             state.soloGrabTimer = 0;
                             state.soloGrabBandPos = 0;
+                            state.soloGrabHandsCursor = 0;
                         }
                         else {
                             // Both attempts failed — strike then solo snapback attack

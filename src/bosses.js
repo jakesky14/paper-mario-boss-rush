@@ -6,7 +6,7 @@ export const BOSSES = [
         maxHp: 150,
         attack: 10,
         color: '#ff4466',
-        panels: { action: 4, plus_one: 2, double_power: 1, arrow_up: 3, arrow_left: 3, arrow_right: 3, treasure_chest: 3, on_panel: 2, magic_circle: 1, arrow_down: 1, envelope: 1, empty: 24 },
+        panels: { action: 4, plus_one: 2, double_power: 1, arrow_up: 6, arrow_left: 6, arrow_right: 6, treasure_chest: 3, on_panel: 2, magic_circle: 1, arrow_down: 2, envelope: 1, empty: 14 },
     },
     {
         id: 1,
@@ -15,7 +15,7 @@ export const BOSSES = [
         maxHp: 100,
         attack: 14,
         color: '#ff8800',
-        panels: { action: 3, plus_one: 1, double_power: 1, arrow_up: 5, arrow_left: 1, arrow_right: 1, treasure_chest: 2, on_panel: 2, magic_circle: 1, arrow_down: 3, envelope: 1, empty: 27 },
+        panels: { action: 3, plus_one: 1, double_power: 1, arrow_up: 10, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 1, arrow_down: 6, envelope: 1, empty: 17 },
     },
     {
         id: 2,
@@ -24,7 +24,7 @@ export const BOSSES = [
         maxHp: 150,
         attack: 18,
         color: '#ffcc00',
-        panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 3, arrow_left: 1, arrow_right: 1, treasure_chest: 3, on_panel: 2, magic_circle: 2, arrow_down: 1, envelope: 1, empty: 27 },
+        panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 6, arrow_left: 2, arrow_right: 2, treasure_chest: 3, on_panel: 2, magic_circle: 2, arrow_down: 2, envelope: 1, empty: 21 },
         special: 'hole_punch',
     },
     {
@@ -34,7 +34,7 @@ export const BOSSES = [
         maxHp: 180,
         attack: 22,
         color: '#aa44cc',
-        panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 3, arrow_left: 1, arrow_right: 1, treasure_chest: 2, on_panel: 2, magic_circle: 2, arrow_down: 1, envelope: 1, empty: 28 },
+        panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 6, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 2, arrow_down: 2, envelope: 1, empty: 22 },
         special: 'tape',
     },
     {
@@ -44,7 +44,7 @@ export const BOSSES = [
         maxHp: 336,
         attack: 26,
         color: '#22cc55',
-        panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 3, arrow_left: 1, arrow_right: 1, treasure_chest: 2, on_panel: 2, magic_circle: 3, arrow_down: 1, envelope: 1, empty: 27 },
+        panels: { action: 3, plus_one: 2, double_power: 2, arrow_up: 6, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 3, arrow_down: 2, envelope: 1, empty: 21 },
         special: 'scissors',
     },
     {
@@ -54,7 +54,7 @@ export const BOSSES = [
         maxHp: 350,
         attack: 30,
         color: '#4466cc',
-        panels: { action: 3, plus_one: 3, double_power: 3, arrow_up: 3, arrow_left: 1, arrow_right: 1, treasure_chest: 2, on_panel: 2, magic_circle: 3, arrow_down: 1, envelope: 1, empty: 25 },
+        panels: { action: 3, plus_one: 3, double_power: 3, arrow_up: 6, arrow_left: 2, arrow_right: 2, treasure_chest: 2, on_panel: 2, magic_circle: 3, arrow_down: 2, envelope: 1, empty: 19 },
         special: 'origami_king',
     },
 ];

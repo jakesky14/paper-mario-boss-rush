@@ -58,6 +58,8 @@ const PANEL_COLORS = {
     envelope: '#dd6600',
     coin: '#ffdd00',
     rubber_band: '#cc4400',
+    hole: '#111111',
+    on_panel_holed: '#22aa44',
 };
 // Ring background colors — warm tones matching screenshot
 const RING_BG_COLORS = ['#d4872a', '#e0a030', '#c8b870', '#b8a860'];
@@ -301,6 +303,31 @@ function drawPanelIcon(ctx, panelType, x, y, size, midAngle, midR, slotIndex, ri
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('$', 0, 0);
+            break;
+        }
+        case 'hole': {
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, size * 0.85, size * 0.55, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#333333';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            break;
+        }
+        case 'on_panel_holed': {
+            ctx.fillStyle = '#aaffcc';
+            ctx.font = `bold ${Math.round(size * 1.2)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('ON', 0, 0);
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.ellipse(size * 0.45, size * 0.35, size * 0.32, size * 0.2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#444444';
+            ctx.lineWidth = 1;
+            ctx.stroke();
             break;
         }
     }
@@ -933,8 +960,8 @@ function getPhaseHint(state) {
         case 'solo_grab_attempt': {
             const sub = state.soloGrabSubPhase;
             if (sub === 'moving')
-                return 'Wait for the band to stop...';
-            return sub === 'paused_left' ? 'Press ← to grip!' : 'Press → to grip!';
+                return 'Move ← → to position hands, then SPACE to grip!';
+            return 'Align hands with band and press SPACE!';
         }
         case 'solo_snapback_attack':
             return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'SOLO SNAPBACK incoming!';
@@ -942,6 +969,10 @@ function getPhaseHint(state) {
             return 'MASH SPACE to slam the band!';
         case 'solo_slingshot':
             return state.soloSlingshotLaunched ? 'LAUNCHING...' : 'Hold ↓ to charge, release to SLINGSHOT!';
+        case 'enemy_turn_announce':
+            return 'Boss is preparing to attack...';
+        case 'hole_punch_attack':
+            return 'Hole Punch punches the inner ring!';
         case 'save_prompt':
             return '← → navigate   ENTER confirm';
         default:
@@ -2933,29 +2964,48 @@ function drawSoloPhase(ctx, state, tick) {
         // Band oscillates or stays at pause position
         const bandOffsetX = state.soloGrabBandPos * 35;
         drawBoss1Solo(ctx, bCX + bandOffsetX, bCY, 90, tick);
-        // Pause direction prompt — press matching arrow key
-        if (state.soloGrabSubPhase === 'paused_left' || state.soloGrabSubPhase === 'paused_right') {
-            const blink = Math.floor(Date.now() / 250) % 2 === 0;
-            ctx.save();
-            ctx.textAlign = 'center';
-            // Static "PRESS" label
-            ctx.fillStyle = '#ffdd44';
-            ctx.font = 'bold 20px monospace';
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 3;
-            ctx.strokeText('PRESS', bCX + bandOffsetX, bCY - 148);
-            ctx.fillText('PRESS', bCX + bandOffsetX, bCY - 148);
-            // Blinking arrow
-            if (blink) {
-                ctx.fillStyle = '#44ff88';
-                ctx.font = 'bold 52px monospace';
-                ctx.lineWidth = 6;
-                const arrow = state.soloGrabSubPhase === 'paused_left' ? '←' : '→';
-                ctx.strokeText(arrow, bCX + bandOffsetX, bCY - 108);
-                ctx.fillText(arrow, bCX + bandOffsetX, bCY - 108);
+        // Player hands cursor
+        const cursorOffsetX = state.soloGrabHandsCursor * 35;
+        const paused = state.soloGrabSubPhase === 'paused_left' || state.soloGrabSubPhase === 'paused_right';
+        const targetPos = state.soloGrabSubPhase === 'paused_left' ? -3 : 3;
+        const aligned = paused && Math.abs(state.soloGrabHandsCursor - targetPos) <= 1;
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Draw hands cursor (pair of hands symbol)
+        ctx.font = 'bold 36px monospace';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 4;
+        const cursorColor = aligned ? '#44ff88' : '#ffdd44';
+        ctx.fillStyle = cursorColor;
+        ctx.strokeText('👐', bCX + cursorOffsetX, bCY - 120);
+        ctx.fillText('👐', bCX + cursorOffsetX, bCY - 120);
+        // Label
+        ctx.font = 'bold 14px monospace';
+        ctx.lineWidth = 2;
+        ctx.strokeText('HANDS', bCX + cursorOffsetX, bCY - 95);
+        ctx.fillText('HANDS', bCX + cursorOffsetX, bCY - 95);
+        if (paused) {
+            if (aligned) {
+                const blink = Math.floor(Date.now() / 250) % 2 === 0;
+                if (blink) {
+                    ctx.fillStyle = '#44ff88';
+                    ctx.font = 'bold 18px monospace';
+                    ctx.lineWidth = 3;
+                    ctx.strokeText('PRESS SPACE!', bCX + cursorOffsetX, bCY - 148);
+                    ctx.fillText('PRESS SPACE!', bCX + cursorOffsetX, bCY - 148);
+                }
             }
-            ctx.restore();
+            else {
+                ctx.fillStyle = '#ffdd44';
+                ctx.font = 'bold 14px monospace';
+                ctx.lineWidth = 2;
+                const arrow = state.soloGrabSubPhase === 'paused_left' ? '← align left!' : '→ align right!';
+                ctx.strokeText(arrow, bCX + bandOffsetX, bCY - 148);
+                ctx.fillText(arrow, bCX + bandOffsetX, bCY - 148);
+            }
         }
+        ctx.restore();
     }
     else if (phase === 'solo_snapback_attack') {
         const t = state.soloSnapbackAttackT;
@@ -3299,6 +3349,37 @@ function drawPullback(ctx, state, tick) {
     ctx.restore();
     void tick;
 }
+function drawEnemyTurnAnnounce(ctx, state, tick) {
+    // Show for first 2000ms, then fade for 1000ms
+    const elapsed = 3000 - state.enemyTurnAnnounceTimer;
+    if (elapsed > 2000)
+        return; // sign has disappeared, just waiting
+    const alpha = elapsed < 1800 ? 1 : 1 - (elapsed - 1800) / 200;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // Purple banner
+    const bw = 420, bh = 90;
+    const bx = CANVAS_W / 2 - bw / 2;
+    const by = CANVAS_H / 2 - bh / 2 - 20;
+    ctx.fillStyle = '#550088';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = '#cc44ff';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(bx, by, bw, bh);
+    const pulse = 0.85 + 0.15 * Math.sin(tick * 0.02);
+    ctx.globalAlpha = alpha * pulse;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 44px monospace';
+    ctx.fillStyle = '#ee88ff';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 5;
+    ctx.strokeText("ENEMY'S TURN", CANVAS_W / 2, by + bh / 2);
+    ctx.fillText("ENEMY'S TURN", CANVAS_W / 2, by + bh / 2);
+    ctx.restore();
+    void state;
+    void tick;
+}
 // Main render function
 export function render(ctx, state, tick) {
     ctx.fillStyle = '#111122';
@@ -3367,6 +3448,8 @@ export function render(ctx, state, tick) {
                 ctx.restore();
             }
             return;
+        case 'enemy_turn_announce':
+        case 'hole_punch_attack':
         case 'rainbow_smash':
         case 'rainbow_roll_attack':
         case 'pullback':
@@ -3504,6 +3587,10 @@ export function render(ctx, state, tick) {
     }
     if (state.phase === 'trapped_snapback') {
         drawTrappedSnapback(ctx, state, tick);
+    }
+    // Enemy's Turn announcement overlay
+    if (state.phase === 'enemy_turn_announce') {
+        drawEnemyTurnAnnounce(ctx, state, tick);
     }
     // Pause button (always shown during fight phases)
     drawPauseButton(ctx, state, tick);

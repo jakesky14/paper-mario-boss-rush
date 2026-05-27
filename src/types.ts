@@ -1,5 +1,5 @@
 // Panel types for ring slots
-export type PanelType = 'empty' | 'action' | 'heal' | 'arrow_up' | 'arrow_left' | 'arrow_right' | 'plus_one' | 'double_power' | 'treasure_chest' | 'on_panel' | 'magic_circle' | 'arrow_down' | 'envelope' | 'coin' | 'rubber_band';
+export type PanelType = 'empty' | 'action' | 'heal' | 'arrow_up' | 'arrow_left' | 'arrow_right' | 'plus_one' | 'double_power' | 'treasure_chest' | 'on_panel' | 'magic_circle' | 'arrow_down' | 'envelope' | 'coin' | 'rubber_band' | 'hole' | 'on_panel_holed';
 
 // Game phases
 export type Phase =
@@ -38,7 +38,9 @@ export type Phase =
   | 'how_to_play'
   | 'save_prompt'
   | 'victory'
-  | 'game_over';
+  | 'game_over'
+  | 'enemy_turn_announce'
+  | 'hole_punch_attack';
 
 export interface AccessoryInventory {
   heartPlus: boolean;
@@ -269,6 +271,16 @@ export interface GameState {
   soloSlingshotLaunched: boolean;     // player released ↓ → launch animation
   soloSlingshotT: number;             // 0..1 launch animation progress
   soloSnapbackAttackT: number;        // 0..1 solo snapback attack travel progress
+
+  // Enemy turn announcement
+  pendingBossPhase: Phase;            // phase to transition to after announcement
+  enemyTurnAnnounceTimer: number;     // ms remaining (3000 = 2s sign + 1s wait)
+
+  // Solo grab cursor
+  soloGrabHandsCursor: number;        // -3..3, player moves with ←/→ to align with band
+
+  // Hole Punch attack
+  holePunchAttackTimer: number;       // ms display timer for hole_punch_attack phase
 }
 
 export interface TargetedPanel {
