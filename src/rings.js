@@ -22,12 +22,29 @@ export function createRings(dist) {
         pool.push('on_panel');
     for (let i = 0; i < dist.magic_circle; i++)
         pool.push('magic_circle');
+    for (let i = 0; i < dist.arrow_down; i++)
+        pool.push('arrow_down');
+    for (let i = 0; i < dist.envelope; i++)
+        pool.push('envelope');
     for (let i = 0; i < dist.empty; i++)
         pool.push('empty');
     // Pad or trim to exactly 48 panels (4 rings * 12)
     const total = NUM_RINGS * NUM_PANELS;
     while (pool.length < total)
         pool.push('empty');
+    // Enforce max 1 of each special panel per run
+    const limitedPanels = ['double_power', 'plus_one', 'treasure_chest', 'on_panel', 'envelope'];
+    for (const sp of limitedPanels) {
+        let found = false;
+        for (let i = 0; i < pool.length; i++) {
+            if (pool[i] === sp) {
+                if (found)
+                    pool[i] = 'empty';
+                else
+                    found = true;
+            }
+        }
+    }
     // Shuffle
     shuffleArray(pool);
     // Split into rings
@@ -36,6 +53,13 @@ export function createRings(dist) {
         rings.push({
             panels: pool.slice(r * NUM_PANELS, (r + 1) * NUM_PANELS),
         });
+    }
+    // No action panels on the two outermost rings (rings 2 and 3)
+    for (const r of [2, 3]) {
+        for (let c = 0; c < NUM_PANELS; c++) {
+            if (rings[r].panels[c] === 'action')
+                rings[r].panels[c] = 'empty';
+        }
     }
     return rings;
 }
@@ -65,33 +89,38 @@ export function rotateRing(ring, direction) {
         panels[panels.length - 1] = first;
     }
 }
-// Slide a column (same slot index across all 4 rings) inward or outward by 1.
-// Also slides the diametrically opposite column (column + 6) % 12.
-// 'in': outer->inner shift (ring3 panel goes to ring2, ring2 to ring1, ring1 to ring0, ring0 wraps to ring3)
-// 'out': inner->outer shift (ring0 panel goes to ring1, ring1 to ring2, ring2 to ring3, ring3 wraps to ring0)
+// Slide a column: cycles all 8 panels (4 rings on slot `column` + 4 rings on opposite slot `column+6`)
+// as a single chain. Inward on one side connects to outward on the opposite side.
+// 'in': chain moves ring3[col]→ring2[col]→ring1[col]→ring0[col]→ring0[opp]→ring1[opp]→ring2[opp]→ring3[opp]→ring3[col]
+// 'out': reverse of the above
 export function slideColumn(rings, column, direction) {
-    slideOneColumn(rings, column, direction);
-    slideOneColumn(rings, (column + 6) % 12, direction);
-}
-function slideOneColumn(rings, column, direction) {
+    const opp = (column + 6) % 12;
     if (direction === 'in') {
-        const inner = rings[0].panels[column];
+        const saved = rings[0].panels[column];
         rings[0].panels[column] = rings[1].panels[column];
         rings[1].panels[column] = rings[2].panels[column];
         rings[2].panels[column] = rings[3].panels[column];
-        rings[3].panels[column] = inner;
+        rings[3].panels[column] = rings[3].panels[opp];
+        rings[3].panels[opp] = rings[2].panels[opp];
+        rings[2].panels[opp] = rings[1].panels[opp];
+        rings[1].panels[opp] = rings[0].panels[opp];
+        rings[0].panels[opp] = saved;
     }
     else {
-        const outer = rings[3].panels[column];
+        const saved = rings[3].panels[column];
         rings[3].panels[column] = rings[2].panels[column];
         rings[2].panels[column] = rings[1].panels[column];
         rings[1].panels[column] = rings[0].panels[column];
-        rings[0].panels[column] = outer;
+        rings[0].panels[column] = rings[0].panels[opp];
+        rings[0].panels[opp] = rings[1].panels[opp];
+        rings[1].panels[opp] = rings[2].panels[opp];
+        rings[2].panels[opp] = rings[3].panels[opp];
+        rings[3].panels[opp] = saved;
     }
 }
 // Simulate Mario's path through the ring system
 // Mario starts at the given ring and slot, following arrow panels
-export function simulatePath(rings, startRing = 3, startSlot = 8, magicCircleActive = false) {
+export function simulatePath(rings, startRing = 3, startSlot = 6, magicCircleActive = false) {
     const steps = [];
     let ring = startRing;
     let slot = startSlot;
@@ -99,8 +128,11 @@ export function simulatePath(rings, startRing = 3, startSlot = 8, magicCircleAct
     const visited = new Set();
     while (true) {
         const key = `${ring},${slot}`;
-        if (visited.has(key))
-            break; // loop protection
+        if (visited.has(key)) {
+            // Mario looped back — show him arriving at this cell, then stop
+            steps.push({ ring, slot, panel: 'empty', pauseMs: 0 });
+            break;
+        }
         visited.add(key);
         const panel = rings[ring].panels[slot];
         if (panel === 'arrow_up') {
@@ -120,13 +152,25 @@ export function simulatePath(rings, startRing = 3, startSlot = 8, magicCircleAct
             lastDir = 'right';
             slot = (slot + 1) % 12;
         }
+        else if (panel === 'arrow_down') {
+            steps.push({ ring, slot, panel, pauseMs: 0 });
+            lastDir = 'down';
+            if (ring === NUM_RINGS - 1)
+                break; // can't go further out
+            ring++;
+        }
         else if (panel === 'on_panel') {
             steps.push({ ring, slot, panel, pauseMs: 500 });
-            // continue in last direction (magicActive is now just cosmetic in game state)
+            magicCircleActive = true; // activate immediately so magic circles later this path are usable
             if (lastDir === 'up') {
                 if (ring === 0)
                     break;
                 ring--;
+            }
+            else if (lastDir === 'down') {
+                if (ring === NUM_RINGS - 1)
+                    break;
+                ring++;
             }
             else if (lastDir === 'left') {
                 slot = (slot - 1 + 12) % 12;
@@ -149,6 +193,11 @@ export function simulatePath(rings, startRing = 3, startSlot = 8, magicCircleAct
                         break;
                     ring--;
                 }
+                else if (lastDir === 'down') {
+                    if (ring === NUM_RINGS - 1)
+                        break;
+                    ring++;
+                }
                 else if (lastDir === 'left') {
                     slot = (slot - 1 + 12) % 12;
                 }
@@ -165,6 +214,11 @@ export function simulatePath(rings, startRing = 3, startSlot = 8, magicCircleAct
                     break;
                 ring--;
             }
+            else if (lastDir === 'down') {
+                if (ring === NUM_RINGS - 1)
+                    break;
+                ring++;
+            }
             else if (lastDir === 'left') {
                 slot = (slot - 1 + 12) % 12;
             }
@@ -178,6 +232,11 @@ export function simulatePath(rings, startRing = 3, startSlot = 8, magicCircleAct
                 if (ring === 0)
                     break;
                 ring--;
+            }
+            else if (lastDir === 'down') {
+                if (ring === NUM_RINGS - 1)
+                    break;
+                ring++;
             }
             else if (lastDir === 'left') {
                 slot = (slot - 1 + 12) % 12;
@@ -193,11 +252,57 @@ export function simulatePath(rings, startRing = 3, startSlot = 8, magicCircleAct
                     break;
                 ring--;
             }
+            else if (lastDir === 'down') {
+                if (ring === NUM_RINGS - 1)
+                    break;
+                ring++;
+            }
             else if (lastDir === 'left') {
                 slot = (slot - 1 + 12) % 12;
             }
             else {
                 slot = (slot + 1) % 12;
+            }
+        }
+        else if (panel === 'envelope') {
+            steps.push({ ring, slot, panel, pauseMs: 600 });
+            if (lastDir === 'up') {
+                if (ring === 0)
+                    break;
+                ring--;
+            }
+            else if (lastDir === 'down') {
+                if (ring === NUM_RINGS - 1)
+                    break;
+                ring++;
+            }
+            else if (lastDir === 'left') {
+                slot = (slot - 1 + 12) % 12;
+            }
+            else {
+                slot = (slot + 1) % 12;
+            }
+        }
+        else if (panel === 'rubber_band') {
+            steps.push({ ring, slot, panel, pauseMs: 150 });
+            // Deflect Mario inward when moving horizontally — slot stays same so stacked bands are each hit
+            if (lastDir === 'left' || lastDir === 'right') {
+                if (ring === 0)
+                    break;
+                ring--;
+                // lastDir unchanged: Mario continues left/right from the new ring on the next step
+            }
+            else {
+                if (lastDir === 'up') {
+                    if (ring === 0)
+                        break;
+                    ring--;
+                }
+                else {
+                    if (ring === NUM_RINGS - 1)
+                        break;
+                    ring++;
+                }
             }
         }
         else if (panel === 'action') {
@@ -211,6 +316,11 @@ export function simulatePath(rings, startRing = 3, startSlot = 8, magicCircleAct
                 if (ring === 0)
                     break;
                 ring--;
+            }
+            else if (lastDir === 'down') {
+                if (ring === NUM_RINGS - 1)
+                    break;
+                ring++;
             }
             else if (lastDir === 'left') {
                 slot = (slot - 1 + 12) % 12;
@@ -230,10 +340,10 @@ export function ensureBacksideReachable(rings) {
         return;
     const needed = 4 - horizontalArrows;
     let replaced = 0;
-    // Find non-arrow panels to replace (skip slot 8 which is Mario's start)
+    // Find non-arrow panels to replace (skip slot 6 which is Mario's start)
     const candidates = [];
     for (let i = 0; i < NUM_PANELS; i++) {
-        if (i === 8)
+        if (i === 6)
             continue; // Mario's starting slot
         const p = outerRing.panels[i];
         if (p !== 'arrow_left' && p !== 'arrow_right' && p !== 'arrow_up') {

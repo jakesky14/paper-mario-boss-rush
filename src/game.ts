@@ -162,6 +162,23 @@ export class Game {
       armsPullHeld: false,
       armsPullT: 0,
       armsPullDamageDealt: false,
+      rubberBandSoloMode: false,
+      soloBootsHammerRestoreHp: 0,
+      soloSnapbackChargeTimer: 0,
+      soloGrabTimer: 0,
+      soloGrabAttempt: 0,
+      soloGrabSubPhase: 'moving' as const,
+      soloGrabBandPos: 0,
+      soloGrabGripped: false,
+      soloGrabPauseTimer: 0,
+      soloSlamTimer: 0,
+      soloSlamCount: 0,
+      soloSlamCooldown: 0,
+      soloPullHeld: false,
+      soloPullT: 0,
+      soloSlingshotLaunched: false,
+      soloSlingshotT: 0,
+      soloSnapbackAttackT: 0,
     };
   }
 
@@ -258,6 +275,23 @@ export class Game {
     this.state.armsPullHeld = false;
     this.state.armsPullT = 0;
     this.state.armsPullDamageDealt = false;
+    this.state.rubberBandSoloMode = false;
+    this.state.soloBootsHammerRestoreHp = 0;
+    this.state.soloSnapbackChargeTimer = 0;
+    this.state.soloGrabTimer = 0;
+    this.state.soloGrabAttempt = 0;
+    this.state.soloGrabSubPhase = 'moving';
+    this.state.soloGrabBandPos = 0;
+    this.state.soloGrabGripped = false;
+    this.state.soloGrabPauseTimer = 0;
+    this.state.soloSlamTimer = 0;
+    this.state.soloSlamCount = 0;
+    this.state.soloSlamCooldown = 0;
+    this.state.soloPullHeld = false;
+    this.state.soloPullT = 0;
+    this.state.soloSlingshotLaunched = false;
+    this.state.soloSlingshotT = 0;
+    this.state.soloSnapbackAttackT = 0;
     if (bossIndex === 1) {
       this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
       this.state.boss.maxHp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
@@ -363,8 +397,16 @@ export class Game {
   private bindInput(): void {
     window.addEventListener('keydown', (e) => this.handleKey(e));
     window.addEventListener('keyup', (e) => {
-      if (e.key === 'ArrowDown' && this.state.phase === 'arms_grab') {
-        this.state.armsPullHeld = false;
+      if (e.key === 'ArrowDown') {
+        if (this.state.phase === 'arms_grab') {
+          this.state.armsPullHeld = false;
+        }
+        if (this.state.phase === 'solo_slingshot' && !this.state.soloSlingshotLaunched) {
+          this.state.soloPullHeld = false;
+          if (this.state.soloPullT > 0.1) {
+            this.state.soloSlingshotLaunched = true;
+          }
+        }
       }
     });
     this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
@@ -378,7 +420,8 @@ export class Game {
     const fightPhases: Phase[] = ['puzzle', 'mario_walk', 'attack_choice', 'mario_jump', 'mario_hammer',
       'mario_mash', 'boss_attack', 'primary_target', 'pencil_cutscene', 'pencil_rain', 'snap_shut',
       'boss_reload', 'pencil_grab', 'rainbow_smash', 'rainbow_roll_attack', 'pullback', 'bumper_bands',
-      'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback'];
+      'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback',
+      'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot'];
     if ((e.key === 'p' || e.key === 'P') && fightPhases.includes(phase)) {
       e.preventDefault();
       this.state.paused = !this.state.paused;
@@ -566,6 +609,22 @@ export class Game {
         this.state.playerBlocked = true;
         return;
       }
+      if (phase === 'solo_snapback_attack' && this.state.blockWindowOpen && !this.state.snapbackBlocked) {
+        this.state.snapbackBlocked = true;
+        this.state.playerBlocked = true;
+        return;
+      }
+      if (phase === 'solo_slam' && this.state.soloSlamCooldown <= 0) {
+        this.state.soloSlamCount++;
+        this.state.soloSlamCooldown = 250;
+        this.state.damageNumbers.push({
+          value: 0, label: 'SLAM!',
+          x: RING_CX + (Math.random() - 0.5) * 60, y: RING_CY - 50,
+          alpha: 1, vy: -2, color: '#ff8800', scale: 1.5,
+        });
+        this.spawnFlash('boss', '#ff6600');
+        return;
+      }
       if ((phase === 'boss_attack' || phase === 'pencil_rain' || phase === 'snap_shut' || phase === 'rainbow_roll_attack') && this.state.blockWindowOpen && !this.state.playerBlocked) {
         this.state.playerBlocked = true;
         return;
@@ -681,6 +740,24 @@ export class Game {
           e.preventDefault();
           this.state.armsPullHeld = true;
         }
+      }
+      return;
+    }
+
+    // solo_grab_attempt key handling — Space during pause grips the band
+    if (phase === 'solo_grab_attempt') {
+      const sub = this.state.soloGrabSubPhase;
+      if (e.code === 'Space' && (sub === 'paused_left' || sub === 'paused_right') && !this.state.soloGrabGripped) {
+        this.state.soloGrabGripped = true;
+      }
+      return;
+    }
+
+    // solo_slingshot key handling — ArrowDown to pull
+    if (phase === 'solo_slingshot') {
+      if (e.key === 'ArrowDown' && !this.state.soloSlingshotLaunched) {
+        e.preventDefault();
+        this.state.soloPullHeld = true;
       }
       return;
     }
@@ -1060,8 +1137,15 @@ export class Game {
     this.spawnFlash('boss', perfect ? '#ffdd44' : '#ffffff');
 
     if (this.state.boss.hp <= 0) {
-      this.handleBossDefeated();
-      return;
+      if (this.state.bossIndex === 1 && !this.state.rubberBandSoloMode) {
+        // Boots/hammer killing blow — enter solo mode; boss still gets an enemy turn
+        this.state.rubberBandSoloMode = true;
+        this.state.boss.hp = 1;
+        // Fall through to normal post-attack routing (startEnemyTurn)
+      } else {
+        this.handleBossDefeated();
+        return;
+      }
     }
 
     // Second attack check
@@ -1191,6 +1275,13 @@ export class Game {
     // Store alive count in pencilRainCount for damage calc
     this.state.pencilRainCount = aliveCount;
     this.transitionTo('rainbow_roll_attack');
+  }
+
+  private startSoloSnapbackCycle(): void {
+    // After a failed grab cycle, go back to setup — setup will show the charge warning,
+    // then puzzle lets Mario line up a new magic circle
+    this.state.bossAttackName = '';
+    this.transitionTo('setup');
   }
 
   private marioScreenPos(): { x: number; y: number } {
@@ -1515,7 +1606,12 @@ export class Game {
           state.bossAttackName = 'PRIMARY TARGET';
           this.transitionTo('primary_target');
         } else if (state.bossIndex === 1) {
-          if (state.marioTied) {
+          if (state.rubberBandSoloMode) {
+            // Solo phase: show charge warning, then let Mario arrange a new magic circle
+            state.soloSnapbackChargeTimer = 3000;
+            state.bossAttackName = 'SOLO SNAPBACK CHARGING...';
+            this.transitionTo('solo_snapback_charge');
+          } else if (state.marioTied) {
             state.trappedSnapbackTimer = 3000;
             state.bossAttackName = 'TRAPPED SNAPBACK!';
             this.transitionTo('trapped_snapback');
@@ -1867,8 +1963,12 @@ export class Game {
               state.pencilCutsceneTimer = 4000;
               state.bossAttackName = 'PENCILS FIRE!';
               this.transitionTo('pencil_cutscene');
+            } else if (state.marioReachedMagicCircle && state.bossIndex === 1 && state.rubberBandSoloMode) {
+              // Solo phase: Mario reached the magic circle needed to grab the band
+              state.bossAttackName = 'GRAB THE BAND!';
+              this.transitionTo('solo_grab_attempt');
             } else if (state.marioReachedMagicCircle && state.bossIndex === 1) {
-              // Boss 1: 1000-fold arms grab mechanic instead of mash
+              // Boss 1 first phase: 1000-fold arms grab mechanic
               const sign = Math.random() < 0.5 ? 1 : -1;
               state.armsGrabHandsPos = sign * (1 + Math.floor(Math.random() * 3));
               state.armsGrabGripped = false;
@@ -1928,6 +2028,12 @@ export class Game {
             });
             this.spawnFlash('boss', '#ff4400');
             state.armsPullT = 0;
+            // Arms kill check — permanent solo mode
+            if (state.bossIndex === 1 && !state.rubberBandSoloMode && state.boss.hp <= 0) {
+              state.rubberBandSoloMode = true;
+              state.boss.hp = 1;
+              state.soloBootsHammerRestoreHp = 0; // arms kill — no restore
+            }
             // Done — go to pullback
             state.pullbackTimer = 1200;
             state.bossAttackName = 'PULLBACK!';
@@ -2180,7 +2286,12 @@ export class Game {
       case 'pullback': {
         state.pullbackTimer = Math.max(0, state.pullbackTimer - dt);
         if (state.pullbackTimer <= 0) {
-          state.boss.hp = Math.max(0, state.rubberBandCount * state.rubberBandHpPerBand - state.rubberBindPermanentDmg);
+          if (state.rubberBandSoloMode) {
+            // Keep HP at 1 — solo sequence requires a new magic circle next puzzle
+            state.boss.hp = 1;
+          } else {
+            state.boss.hp = Math.max(0, state.rubberBandCount * state.rubberBandHpPerBand - state.rubberBindPermanentDmg);
+          }
           state.bossAttackName = '';
           this.transitionTo('setup');
         }
@@ -2216,6 +2327,146 @@ export class Game {
             this.transitionTo('game_over');
           } else {
             this.transitionTo('setup');
+          }
+        }
+        break;
+      }
+
+      case 'solo_snapback_charge': {
+        state.soloSnapbackChargeTimer = Math.max(0, state.soloSnapbackChargeTimer - dt);
+        if (state.soloSnapbackChargeTimer <= 0) {
+          // Reset grab state fresh for the upcoming magic circle encounter
+          state.soloGrabAttempt = 0;
+          state.soloGrabTimer = 0;
+          state.soloGrabSubPhase = 'moving';
+          state.soloGrabBandPos = 0;
+          state.soloGrabGripped = false;
+          state.soloGrabPauseTimer = 0;
+          state.blockWindowOpen = false;
+          state.playerBlocked = false;
+          state.snapbackBlocked = false;
+          state.bossAttackName = '';
+          this.transitionTo('puzzle');
+        }
+        break;
+      }
+
+      case 'solo_grab_attempt': {
+        if (state.soloGrabSubPhase === 'moving') {
+          state.soloGrabTimer += dt;
+          // 3 oscillation cycles in 3000ms
+          state.soloGrabBandPos = Math.sin(state.soloGrabTimer * 0.00628) * 3;
+          if (state.soloGrabTimer >= 3000) {
+            state.soloGrabSubPhase = state.soloGrabAttempt === 0 ? 'paused_left' : 'paused_right';
+            state.soloGrabBandPos = state.soloGrabAttempt === 0 ? -3 : 3;
+            state.soloGrabPauseTimer = 1000;
+          }
+        } else {
+          state.soloGrabPauseTimer = Math.max(0, state.soloGrabPauseTimer - dt);
+          if (state.soloGrabGripped) {
+            // Success — grip secured, go to slam
+            state.soloSlamTimer = 5000;
+            state.soloSlamCount = 0;
+            state.soloSlamCooldown = 0;
+            state.bossAttackName = 'SOLO SLAM!';
+            this.transitionTo('solo_slam');
+          } else if (state.soloGrabPauseTimer <= 0) {
+            if (state.soloGrabAttempt === 0) {
+              // First attempt failed — try second
+              state.soloGrabAttempt = 1;
+              state.soloGrabSubPhase = 'moving';
+              state.soloGrabTimer = 0;
+              state.soloGrabBandPos = 0;
+            } else {
+              // Both attempts failed — strike then solo snapback attack
+              const rawDmg = 21 + Math.floor(Math.random() * 2);
+              const actualDmg = this.applyGuardReduction(rawDmg);
+              state.playerHp = Math.max(0, state.playerHp - actualDmg);
+              state.lastBossDamage = actualDmg;
+              const mp = this.marioScreenPos();
+              state.damageNumbers.push({
+                value: actualDmg, x: mp.x, y: mp.y - 30,
+                alpha: 1, vy: -2.5, color: '#ff4444', scale: 1.8,
+                label: `BAND STRIKE! -${actualDmg}`, effectType: 'damage',
+              });
+              this.spawnFlash('player', '#ff0000');
+              if (state.playerHp <= 0) {
+                this.transitionTo('game_over');
+                break;
+              }
+              state.soloSnapbackAttackT = 0;
+              state.blockWindowOpen = false;
+              state.playerBlocked = false;
+              state.snapbackBlocked = false;
+              state.bossAttackName = 'SOLO SNAPBACK!';
+              this.transitionTo('solo_snapback_attack');
+            }
+          }
+        }
+        break;
+      }
+
+      case 'solo_snapback_attack': {
+        const SOLO_TRAVEL = 1800;
+        const SOLO_BLOCK_START = 0.35;
+        const SOLO_BLOCK_END = 0.72;
+        state.soloSnapbackAttackT = Math.min(1, state.soloSnapbackAttackT + dt / SOLO_TRAVEL);
+        if (state.soloSnapbackAttackT >= SOLO_BLOCK_START && state.soloSnapbackAttackT < SOLO_BLOCK_END) {
+          state.blockWindowOpen = true;
+        } else {
+          state.blockWindowOpen = false;
+        }
+        if (state.soloSnapbackAttackT >= 1) {
+          state.blockWindowOpen = false;
+          const snapRanges: [number, number][] = [[56, 61], [53, 58], [50, 55], [45, 50]];
+          const [minDmg, maxDmg] = snapRanges[Math.min(3, state.marioFinalRing)];
+          const rawFull = minDmg + Math.floor(Math.random() * (maxDmg - minDmg + 1));
+          const rawDmg = state.snapbackBlocked ? Math.ceil(rawFull / 2) : rawFull;
+          const actualDmg = this.applyGuardReduction(rawDmg);
+          state.playerHp = Math.max(0, state.playerHp - actualDmg);
+          state.lastBossDamage = actualDmg;
+          const mp = this.marioScreenPos();
+          state.damageNumbers.push({
+            value: actualDmg, x: mp.x, y: mp.y - 30,
+            alpha: 1, vy: -3, color: '#ff2200', scale: 2.2,
+            label: state.snapbackBlocked ? `BLOCKED! -${actualDmg}` : `SOLO SNAPBACK! -${actualDmg}`,
+            effectType: 'damage',
+          });
+          this.spawnFlash('player', state.snapbackBlocked ? '#44aaff' : '#ff0000');
+          if (state.playerHp <= 0) {
+            this.transitionTo('game_over');
+          } else {
+            this.startSoloSnapbackCycle();
+          }
+        }
+        break;
+      }
+
+      case 'solo_slam': {
+        state.soloSlamCooldown = Math.max(0, state.soloSlamCooldown - dt);
+        state.soloSlamTimer = Math.max(0, state.soloSlamTimer - dt);
+        if (state.soloSlamTimer <= 0) {
+          state.soloPullHeld = false;
+          state.soloPullT = 0;
+          state.soloSlingshotLaunched = false;
+          state.soloSlingshotT = 0;
+          state.bossAttackName = 'SLINGSHOT!';
+          this.transitionTo('solo_slingshot');
+        }
+        break;
+      }
+
+      case 'solo_slingshot': {
+        if (state.soloSlingshotLaunched) {
+          state.soloSlingshotT = Math.min(1, state.soloSlingshotT + dt / 1200);
+          if (state.soloSlingshotT >= 1) {
+            this.handleBossDefeated();
+          }
+        } else if (state.soloPullHeld) {
+          state.soloPullT = Math.min(1, state.soloPullT + dt / 1500);
+          if (state.soloPullT >= 1) {
+            state.soloPullHeld = false;
+            state.soloSlingshotLaunched = true;
           }
         }
         break;

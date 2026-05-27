@@ -30,6 +30,11 @@ export type Phase =
   | 'arms_grab'
   | 'snapback'
   | 'trapped_snapback'
+  | 'solo_snapback_charge'
+  | 'solo_grab_attempt'
+  | 'solo_snapback_attack'
+  | 'solo_slam'
+  | 'solo_slingshot'
   | 'save_prompt'
   | 'victory'
   | 'game_over';
@@ -242,6 +247,25 @@ export interface GameState {
   rubberBindDelayTimer: number;  // ms pause between bands after impact
   rubberBindPermanentDmg: number; // accumulated permanent HP loss to boss (not restored by pullback)
   trappedSnapbackTimer: number;  // countdown timer for trapped_snapback phase
+
+  // Solo Phase (Boss 1 — Rubber Band final form)
+  rubberBandSoloMode: boolean;
+  soloBootsHammerRestoreHp: number;   // >0 = boots/hammer kill (restore on pullback), 0 = arms kill (permanent)
+  soloSnapbackChargeTimer: number;    // 2500ms charge warning
+  soloGrabTimer: number;              // ms elapsed during oscillation phase (0..3000)
+  soloGrabAttempt: number;            // 0=first, 1=second
+  soloGrabSubPhase: 'moving' | 'paused_left' | 'paused_right';
+  soloGrabBandPos: number;            // float -3..3 (visual position of solo band)
+  soloGrabGripped: boolean;           // player pressed Space during pause
+  soloGrabPauseTimer: number;         // 1000ms pause window countdown
+  soloSlamTimer: number;              // 5000ms slam countdown
+  soloSlamCount: number;              // number of slams performed
+  soloSlamCooldown: number;           // ms between slams
+  soloPullHeld: boolean;              // ArrowDown is held during slingshot
+  soloPullT: number;                  // 0..1 slingshot pull progress
+  soloSlingshotLaunched: boolean;     // player released ↓ → launch animation
+  soloSlingshotT: number;             // 0..1 launch animation progress
+  soloSnapbackAttackT: number;        // 0..1 solo snapback attack travel progress
 }
 
 export interface TargetedPanel {

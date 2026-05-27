@@ -1,6 +1,6 @@
 import { BOSSES } from './bosses';
-import { createRings, rotateRing, slideColumn, simulatePath, applyHolePunchSpecial, applyOrigamiKingSpecial, ensureBacksideReachable, NUM_PANELS, } from './rings';
-import { render, CANVAS_W, CANVAS_H, RING_CX, RING_CY, BOSS_RADIUS, RING_WIDTH } from './render';
+import { createRings, rotateRing, slideColumn, simulatePath, applyHolePunchSpecial, applyOrigamiKingSpecial, ensureBacksideReachable, NUM_PANELS, shuffleArray, } from './rings';
+import { render, CANVAS_W, CANVAS_H, RING_CX, RING_CY, BOSS_RADIUS, RING_WIDTH, PAUSE_BTN } from './render';
 const PUZZLE_DURATION = 40000; // ms
 const MAX_MOVES = 3;
 const INTRO_DURATION = 4500;
@@ -45,7 +45,7 @@ export class Game {
             lastBossDamage: 0,
             confettiParticles: [],
             titleRingAngle: 0,
-            marioSlot: 8,
+            marioSlot: 6,
             activeRingMoveStarted: false,
             attackChoice: 'none',
             tick: 0,
@@ -57,15 +57,15 @@ export class Game {
             marioReachedAction: false,
             puzzleControlMode: 'ring_select',
             ringCursor: 3,
-            columnCursor: 8,
+            columnCursor: 6,
             attackProjectileT: 0,
             blockWindowOpen: false,
             playerBlocked: false,
             marioFinalRing: 3,
-            marioFinalSlot: 8,
+            marioFinalSlot: 6,
             attackAnimT: 0,
             attackTimingPressed: false,
-            attackPerfect: false,
+            attackQuality: 'none',
             mushroomCount: 3,
             magicCircleActive: false,
             marioReachedMagicCircle: false,
@@ -74,6 +74,10 @@ export class Game {
             mashCount: 0,
             mashCooldown: 0,
             coinBonus: 0,
+            envelopeMessage: '',
+            envelopeTimer: 0,
+            attacksRemaining: 1,
+            paused: false,
             testingMode: false,
             coins: 1000,
             mainMenuCursor: 'fight',
@@ -108,12 +112,47 @@ export class Game {
             rainbowRollCharging: false,
             pencilGrabHandsPos: 0,
             pencilGrabGripped: false,
+            pencilGrabMode: 'rainbow',
             rainbowSmashTimer: 0,
             rainbowSmashCount: 0,
             rainbowSmashCooldown: 0,
             noReloadMode: false,
             saveCursor: 'yes',
             rainbowRollAttackT: 0,
+            rubberBands: [],
+            rubberBandCount: 0,
+            rubberBandHpPerBand: 10,
+            pullbackTimer: 0,
+            marioTied: false,
+            rubberBindBandIndex: 0,
+            rubberBindDelayTimer: 0,
+            rubberBindPermanentDmg: 0,
+            trappedSnapbackTimer: 0,
+            snapbackTimer: 0,
+            snapbackT: 0,
+            snapbackBlocked: false,
+            armsGrabHandsPos: 0,
+            armsGrabGripped: false,
+            armsPullHeld: false,
+            armsPullT: 0,
+            armsPullDamageDealt: false,
+            rubberBandSoloMode: false,
+            soloBootsHammerRestoreHp: 0,
+            soloSnapbackChargeTimer: 0,
+            soloGrabTimer: 0,
+            soloGrabAttempt: 0,
+            soloGrabSubPhase: 'moving',
+            soloGrabBandPos: 0,
+            soloGrabGripped: false,
+            soloGrabPauseTimer: 0,
+            soloSlamTimer: 0,
+            soloSlamCount: 0,
+            soloSlamCooldown: 0,
+            soloPullHeld: false,
+            soloPullT: 0,
+            soloSlingshotLaunched: false,
+            soloSlingshotT: 0,
+            soloSnapbackAttackT: 0,
         };
     }
     resetForBoss(bossIndex) {
@@ -138,7 +177,7 @@ export class Game {
         this.state.lastBossDamage = 0;
         this.state.damageNumbers = [];
         this.state.flashEffects = [];
-        this.state.marioSlot = 8;
+        this.state.marioSlot = 6;
         this.state.activeRingMoveStarted = false;
         this.state.attackChoice = 'none';
         this.state.marioWalkPath = [];
@@ -149,15 +188,18 @@ export class Game {
         this.state.marioReachedAction = false;
         this.state.puzzleControlMode = 'ring_select';
         this.state.ringCursor = 3;
-        this.state.columnCursor = 8;
+        this.state.columnCursor = 6;
         this.state.attackProjectileT = 0;
         this.state.blockWindowOpen = false;
         this.state.playerBlocked = false;
         this.state.marioFinalRing = 3;
-        this.state.marioFinalSlot = 8;
+        this.state.marioFinalSlot = 6;
         this.state.attackAnimT = 0;
         this.state.attackTimingPressed = false;
-        this.state.attackPerfect = false;
+        this.state.attackQuality = 'none';
+        this.state.envelopeMessage = '';
+        this.state.envelopeTimer = 0;
+        this.state.attacksRemaining = 1;
         this.state.mushroomCount = 3;
         this.state.magicCircleActive = false;
         this.state.marioReachedMagicCircle = false;
@@ -182,12 +224,51 @@ export class Game {
         this.state.rainbowRollCharging = false;
         this.state.pencilGrabHandsPos = 0;
         this.state.pencilGrabGripped = false;
+        this.state.pencilGrabMode = 'rainbow';
         this.state.rainbowSmashTimer = 0;
         this.state.rainbowSmashCount = 0;
         this.state.rainbowSmashCooldown = 0;
         this.state.noReloadMode = false;
         this.state.rainbowRollAttackT = 0;
         this.bossSpecialPending = false;
+        this.state.rubberBands = [];
+        this.state.rubberBandCount = bossIndex === 1 ? 10 : 0;
+        this.state.rubberBandHpPerBand = 10;
+        this.state.pullbackTimer = 0;
+        this.state.marioTied = false;
+        this.state.rubberBindBandIndex = 0;
+        this.state.rubberBindDelayTimer = 0;
+        this.state.rubberBindPermanentDmg = 0;
+        this.state.trappedSnapbackTimer = 0;
+        this.state.snapbackTimer = 0;
+        this.state.snapbackT = 0;
+        this.state.snapbackBlocked = false;
+        this.state.armsGrabHandsPos = 0;
+        this.state.armsGrabGripped = false;
+        this.state.armsPullHeld = false;
+        this.state.armsPullT = 0;
+        this.state.armsPullDamageDealt = false;
+        this.state.rubberBandSoloMode = false;
+        this.state.soloBootsHammerRestoreHp = 0;
+        this.state.soloSnapbackChargeTimer = 0;
+        this.state.soloGrabTimer = 0;
+        this.state.soloGrabAttempt = 0;
+        this.state.soloGrabSubPhase = 'moving';
+        this.state.soloGrabBandPos = 0;
+        this.state.soloGrabGripped = false;
+        this.state.soloGrabPauseTimer = 0;
+        this.state.soloSlamTimer = 0;
+        this.state.soloSlamCount = 0;
+        this.state.soloSlamCooldown = 0;
+        this.state.soloPullHeld = false;
+        this.state.soloPullT = 0;
+        this.state.soloSlingshotLaunched = false;
+        this.state.soloSlingshotT = 0;
+        this.state.soloSnapbackAttackT = 0;
+        if (bossIndex === 1) {
+            this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
+            this.state.boss.maxHp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
+        }
     }
     startNewTurn() {
         this.state.rings = createRings(this.state.boss.panels);
@@ -217,12 +298,15 @@ export class Game {
         this.state.marioReachedAction = false;
         this.state.puzzleControlMode = 'ring_select';
         this.state.ringCursor = 3;
-        this.state.columnCursor = 8;
+        this.state.columnCursor = 6;
         this.state.marioFinalRing = 3;
-        this.state.marioFinalSlot = 8;
+        this.state.marioFinalSlot = 6;
         this.state.attackAnimT = 0;
         this.state.attackTimingPressed = false;
-        this.state.attackPerfect = false;
+        this.state.attackQuality = 'none';
+        this.state.envelopeMessage = '';
+        this.state.envelopeTimer = 0;
+        this.state.attacksRemaining = 1;
         // magicCircleActive persists between turns until used
         this.state.marioReachedMagicCircle = false;
         this.state.mashTimer = 0;
@@ -243,17 +327,75 @@ export class Game {
         this.state.bossAttackName = '';
         this.state.turnNumber++;
         this.bossSpecialPending = false;
+        this.state.rubberBands = [];
+        this.state.pullbackTimer = 0;
+        this.state.rubberBindBandIndex = 0;
+        this.state.rubberBindDelayTimer = 0;
+        // NOTE: do NOT reset marioTied here - it persists until trapped_snapback fires
+        // Boss 1: place rubber bands on up/down arrow positions each turn
+        if (this.state.bossIndex === 1 && this.state.rubberBandCount > 0) {
+            this.placeBumperBands();
+        }
     }
     transitionTo(phase) {
         this.state.phase = phase;
     }
+    placeBumperBands() {
+        const rings = this.state.rings;
+        const count = this.state.rubberBandCount;
+        const positions = [];
+        for (let r = 0; r < 4; r++) {
+            for (let s = 0; s < 12; s++) {
+                const p = rings[r].panels[s];
+                if (p === 'arrow_up' || p === 'arrow_down') {
+                    positions.push({ ring: r, slot: s, origPanel: p });
+                }
+            }
+        }
+        shuffleArray(positions);
+        // Keep 3 untouched, replace up to `count` others with rubber_band
+        const toReplace = positions.slice(3, 3 + count);
+        const newBands = [];
+        for (const pos of toReplace) {
+            rings[pos.ring].panels[pos.slot] = 'rubber_band';
+            newBands.push(pos);
+        }
+        this.state.rubberBands = newBands;
+        this.state.boss.hp = Math.max(0, this.state.rubberBandCount * this.state.rubberBandHpPerBand - this.state.rubberBindPermanentDmg);
+    }
     bindInput() {
         window.addEventListener('keydown', (e) => this.handleKey(e));
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowDown') {
+                if (this.state.phase === 'arms_grab') {
+                    this.state.armsPullHeld = false;
+                }
+                if (this.state.phase === 'solo_slingshot' && !this.state.soloSlingshotLaunched) {
+                    this.state.soloPullHeld = false;
+                    if (this.state.soloPullT > 0.1) {
+                        this.state.soloSlingshotLaunched = true;
+                    }
+                }
+            }
+        });
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('click', (e) => this.handleClick(e));
     }
     handleKey(e) {
         const { phase } = this.state;
+        // Pause toggle (P key) during fight phases
+        const fightPhases = ['puzzle', 'mario_walk', 'attack_choice', 'mario_jump', 'mario_hammer',
+            'mario_mash', 'boss_attack', 'primary_target', 'pencil_cutscene', 'pencil_rain', 'snap_shut',
+            'boss_reload', 'pencil_grab', 'rainbow_smash', 'rainbow_roll_attack', 'pullback', 'bumper_bands',
+            'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback',
+            'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot'];
+        if ((e.key === 'p' || e.key === 'P') && fightPhases.includes(phase)) {
+            e.preventDefault();
+            this.state.paused = !this.state.paused;
+            return;
+        }
+        if (this.state.paused)
+            return; // block all other keys while paused
         // Testing select
         if (phase === 'testing_select') {
             const num = parseInt(e.key);
@@ -370,32 +512,92 @@ export class Game {
         // Space bar — context-sensitive timing actions
         if (e.code === 'Space') {
             if (phase === 'mario_mash' && this.state.mashTimer > 0 && this.state.mashCount < 10 && this.state.mashCooldown <= 0) {
-                const hit = 7 + Math.floor(Math.random() * 7);
-                this.state.mashDamageTotal += hit;
-                this.state.boss.hp = Math.max(0, this.state.boss.hp - hit);
-                this.state.mashCount++;
-                this.state.mashCooldown = 250; // 0.25s reload between hits
-                this.state.damageNumbers.push({
-                    value: hit,
-                    x: RING_CX + (Math.random() - 0.5) * 60,
-                    y: RING_CY - 30 + (Math.random() - 0.5) * 40,
-                    alpha: 1, vy: -2.5, color: '#ffdd00', scale: 1.2, effectType: 'damage',
-                });
-                this.spawnFlash('boss', '#ffaa00');
-                // Check for Rainbow Roll trigger
-                if (this.state.bossIndex === 0 && !this.state.rainbowRollReady &&
-                    this.state.boss.hp <= this.state.boss.maxHp / 2 && this.state.boss.hp > 0) {
-                    this.state.rainbowRollReady = true;
-                    this.state.rainbowRollCharging = true;
+                if (this.state.bossIndex === 1) {
+                    // Boss 1: each press destroys one rubber band permanently
+                    if (this.state.rubberBandCount > 0) {
+                        this.state.rubberBandCount--;
+                        const hit = this.state.rubberBandHpPerBand;
+                        this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
+                        this.state.mashDamageTotal += hit;
+                        this.state.mashCount++;
+                        this.state.mashCooldown = 250;
+                        // Remove one rubber band panel from rings
+                        if (this.state.rubberBands.length > 0) {
+                            const removed = this.state.rubberBands.pop();
+                            this.state.rings[removed.ring].panels[removed.slot] = 'empty';
+                        }
+                        this.state.damageNumbers.push({
+                            value: hit, x: RING_CX + (Math.random() - 0.5) * 60,
+                            y: RING_CY - 30 + (Math.random() - 0.5) * 40,
+                            alpha: 1, vy: -2.5, color: '#ff8800', scale: 1.4,
+                            label: 'SNAP!', effectType: 'damage',
+                        });
+                        this.spawnFlash('boss', '#ff8844');
+                        if (this.state.boss.hp <= 0) {
+                            this.handleBossDefeated();
+                            return;
+                        }
+                    }
+                }
+                else {
+                    const hit = 7 + Math.floor(Math.random() * 7);
+                    this.state.mashDamageTotal += hit;
+                    this.state.boss.hp = Math.max(0, this.state.boss.hp - hit);
+                    this.state.mashCount++;
+                    this.state.mashCooldown = 250;
                     this.state.damageNumbers.push({
-                        label: '!! RAINBOW ROLL NEXT TURN!!', value: 0,
-                        x: RING_CX, y: RING_CY - 70, alpha: 1, vy: -2, color: '#ff8800', scale: 1.4,
+                        value: hit,
+                        x: RING_CX + (Math.random() - 0.5) * 60,
+                        y: RING_CY - 30 + (Math.random() - 0.5) * 40,
+                        alpha: 1, vy: -2.5, color: '#ffdd00', scale: 1.2, effectType: 'damage',
                     });
+                    this.spawnFlash('boss', '#ffaa00');
+                    // Check for Rainbow Roll trigger
+                    if (this.state.bossIndex === 0 && !this.state.rainbowRollReady &&
+                        this.state.boss.hp <= this.state.boss.maxHp / 2 && this.state.boss.hp > 0) {
+                        this.state.rainbowRollReady = true;
+                        this.state.rainbowRollCharging = true;
+                        this.state.damageNumbers.push({
+                            label: '!! RAINBOW ROLL NEXT TURN!!', value: 0,
+                            x: RING_CX, y: RING_CY - 70, alpha: 1, vy: -2, color: '#ff8800', scale: 1.4,
+                        });
+                    }
+                    // End mash immediately once all 10 hits used
+                    if (this.state.mashCount >= 10) {
+                        this.state.mashTimer = 0;
+                    }
                 }
-                // End mash immediately once all 10 hits used
-                if (this.state.mashCount >= 10) {
-                    this.state.mashTimer = 0;
-                }
+                return;
+            }
+            if (phase === 'rubber_bind' && this.state.blockWindowOpen && !this.state.playerBlocked && !this.state.marioTied) {
+                // Block success: push Mario back one ring (outward, toward ring 3)
+                this.state.marioFinalRing = Math.min(3, this.state.marioFinalRing + 1);
+                this.state.playerBlocked = true;
+                this.state.damageNumbers.push({
+                    value: 0, label: 'BLOCKED! PUSHED BACK!',
+                    x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -1.5, color: '#44aaff', scale: 1.3,
+                });
+                return;
+            }
+            if (phase === 'snapback' && this.state.blockWindowOpen && !this.state.snapbackBlocked) {
+                this.state.snapbackBlocked = true;
+                this.state.playerBlocked = true;
+                return;
+            }
+            if (phase === 'solo_snapback_attack' && this.state.blockWindowOpen && !this.state.snapbackBlocked) {
+                this.state.snapbackBlocked = true;
+                this.state.playerBlocked = true;
+                return;
+            }
+            if (phase === 'solo_slam' && this.state.soloSlamCooldown <= 0) {
+                this.state.soloSlamCount++;
+                this.state.soloSlamCooldown = 250;
+                this.state.damageNumbers.push({
+                    value: 0, label: 'SLAM!',
+                    x: RING_CX + (Math.random() - 0.5) * 60, y: RING_CY - 50,
+                    alpha: 1, vy: -2, color: '#ff8800', scale: 1.5,
+                });
+                this.spawnFlash('boss', '#ff6600');
                 return;
             }
             if ((phase === 'boss_attack' || phase === 'pencil_rain' || phase === 'snap_shut' || phase === 'rainbow_roll_attack') && this.state.blockWindowOpen && !this.state.playerBlocked) {
@@ -403,15 +605,16 @@ export class Game {
                 return;
             }
             if (phase === 'mario_jump' && !this.state.attackTimingPressed) {
-                this.state.attackTimingPressed = true;
                 const dist = Math.abs(this.state.attackAnimT - 0.5);
-                this.state.attackPerfect = dist <= 0.07;
+                this.state.attackQuality = dist <= 0.05 ? 'excellent' : dist <= 0.12 ? 'great' : dist <= 0.22 ? 'nice' : 'none';
+                this.state.attackTimingPressed = true;
                 return;
             }
             if (phase === 'mario_hammer' && !this.state.attackTimingPressed) {
+                const T = this.state.attackAnimT;
+                this.state.attackQuality = T >= 0.88 ? 'excellent' : T >= 0.76 ? 'great' : T >= 0.62 ? 'nice' : 'none';
                 this.state.attackTimingPressed = true;
-                this.state.attackPerfect = this.state.attackAnimT >= 0.82;
-                this.applyFinalDamage('hammer', this.state.attackPerfect);
+                this.applyFinalDamage('hammer', this.state.attackQuality === 'excellent');
                 return;
             }
             if (phase === 'title') {
@@ -475,6 +678,26 @@ export class Game {
                         x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -2, color: '#ff4444', scale: 1.3,
                     });
                 }
+                else if (this.state.pencilGrabMode === 'case_close') {
+                    // Close the pencil case with 1000-fold arms
+                    this.state.pencilGrabGripped = true;
+                    this.state.pencilCaseClosed = true;
+                    const aliveCount = this.state.pencilsAlive.filter(a => a).length;
+                    const explosionDmg = aliveCount * 3;
+                    this.state.boss.hp = Math.max(0, this.state.boss.hp - explosionDmg);
+                    this.state.lastDamageDealt = explosionDmg;
+                    if (explosionDmg > 0) {
+                        this.state.damageNumbers.push({
+                            value: explosionDmg, x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2.5,
+                            color: '#ff4444', scale: 1.5, label: `BOOM! -${explosionDmg}`, effectType: 'damage',
+                        });
+                        this.spawnFlash('boss', '#ff4400');
+                    }
+                    // Pencils all die
+                    this.state.pencilsAlive = this.state.pencilsAlive.map(() => false);
+                    // No stun — go straight to enemy turn
+                    this.startEnemyTurn();
+                }
                 else {
                     this.state.pencilGrabGripped = true;
                     this.state.rainbowSmashTimer = 5000;
@@ -482,6 +705,54 @@ export class Game {
                     this.state.rainbowSmashCooldown = 0;
                     this.transitionTo('rainbow_smash');
                 }
+            }
+            return;
+        }
+        // arms_grab key handling (boss 1 1000-fold arms)
+        if (phase === 'arms_grab') {
+            if (!this.state.armsGrabGripped) {
+                if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    this.state.armsGrabHandsPos = Math.max(-3, this.state.armsGrabHandsPos - 1);
+                }
+                else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    this.state.armsGrabHandsPos = Math.min(3, this.state.armsGrabHandsPos + 1);
+                }
+                else if (e.code === 'Space') {
+                    if (this.state.armsGrabHandsPos !== 0) {
+                        this.state.damageNumbers.push({
+                            value: 0, label: 'ALIGN FIRST!',
+                            x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -2, color: '#ff4444', scale: 1.3,
+                        });
+                    }
+                    else {
+                        this.state.armsGrabGripped = true;
+                    }
+                }
+            }
+            else {
+                // Gripped — ↓ to pull
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    this.state.armsPullHeld = true;
+                }
+            }
+            return;
+        }
+        // solo_grab_attempt key handling — Space during pause grips the band
+        if (phase === 'solo_grab_attempt') {
+            const sub = this.state.soloGrabSubPhase;
+            if (e.code === 'Space' && (sub === 'paused_left' || sub === 'paused_right') && !this.state.soloGrabGripped) {
+                this.state.soloGrabGripped = true;
+            }
+            return;
+        }
+        // solo_slingshot key handling — ArrowDown to pull
+        if (phase === 'solo_slingshot') {
+            if (e.key === 'ArrowDown' && !this.state.soloSlingshotLaunched) {
+                e.preventDefault();
+                this.state.soloPullHeld = true;
             }
             return;
         }
@@ -591,11 +862,19 @@ export class Game {
         }
     }
     handleClick(e) {
-        if (this.state.phase !== 'puzzle')
-            return;
         const rect = this.canvas.getBoundingClientRect();
         const mx = (e.clientX - rect.left) * (this.canvas.width / rect.width);
         const my = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+        // Pause button click
+        const pb = PAUSE_BTN;
+        if (mx >= pb.x && mx <= pb.x + pb.w && my >= pb.y && my <= pb.y + pb.h) {
+            this.state.paused = !this.state.paused;
+            return;
+        }
+        if (this.state.paused)
+            return;
+        if (this.state.phase !== 'puzzle')
+            return;
         const dx = mx - RING_CX;
         const dy = my - RING_CY;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -659,7 +938,11 @@ export class Game {
         // If Mario's starting panel is not an arrow, turn ends immediately
         const startPanel = this.state.rings[3].panels[this.state.marioSlot];
         const isArrow = startPanel === 'arrow_up' || startPanel === 'arrow_left' || startPanel === 'arrow_right';
-        if (!isArrow) {
+        const isUsableStart = isArrow
+            || startPanel === 'action'
+            || startPanel === 'on_panel'
+            || (startPanel === 'magic_circle' && this.state.magicCircleActive);
+        if (!isUsableStart) {
             this.state.marioWalkPath = [];
             this.state.marioFinalRing = 3;
             this.state.marioFinalSlot = this.state.marioSlot;
@@ -678,8 +961,7 @@ export class Game {
                 if (this.state.boss.special === 'origami_king' || this.state.boss.special === 'scissors') {
                     this.bossSpecialPending = true;
                 }
-                this.transitionTo('boss_attack');
-                this.doBossAttack();
+                this.startEnemyTurn();
             }
             return;
         }
@@ -700,33 +982,70 @@ export class Game {
             target,
         });
     }
+    startEnemyTurn() {
+        if (this.state.bossIndex === 1) {
+            if (Math.random() < 0.5) {
+                this.startSnapback();
+            }
+            else {
+                this.startRubberBind();
+            }
+        }
+        else {
+            this.transitionTo('boss_attack');
+            this.doBossAttack();
+        }
+    }
+    startSnapback() {
+        this.state.bossAttackName = 'SNAPBACK!';
+        this.state.snapbackTimer = 2000; // total approach time
+        this.state.snapbackT = 0;
+        this.state.snapbackBlocked = false;
+        this.state.blockWindowOpen = false;
+        this.state.playerBlocked = false;
+        this.transitionTo('snapback');
+    }
+    startRubberBind() {
+        this.state.bossAttackName = 'RUBBER BIND!';
+        this.state.rubberBindBandIndex = 0;
+        this.state.attackProjectileT = 0;
+        this.state.rubberBindDelayTimer = 0;
+        this.state.blockWindowOpen = false;
+        this.state.playerBlocked = false;
+        this.transitionTo('rubber_bind');
+    }
     doBossAttack() {
         this.state.attackProjectileT = 0;
         this.state.blockWindowOpen = false;
         this.state.playerBlocked = false;
         if (!this.state.bossAttackName) {
-            this.state.bossAttackName = this.state.boss.name.toUpperCase() + '!';
+            if (this.state.bossIndex === 1) {
+                this.state.bossAttackName = 'RUBBER BIND!';
+            }
+            else {
+                this.state.bossAttackName = this.state.boss.name.toUpperCase() + '!';
+            }
         }
     }
     startJumpAttack() {
         this.state.attackChoice = 'jump';
         this.state.attackAnimT = 0;
         this.state.attackTimingPressed = false;
-        this.state.attackPerfect = false;
+        this.state.attackQuality = 'none';
+        this.state.bossAttackName = 'JUMP!';
         this.transitionTo('mario_jump');
     }
     startHammerAttack() {
-        // Boss 0 non-stunned: must be in back columns (far side from Mario = slots around slot 2)
+        // Boss 0 non-stunned: must be in back columns — allow animation but 0 damage if wrong position
         if (this.state.bossIndex === 0 && !this.state.bossStunned) {
-            const caseCloseSlots = [11, 0, 1, 2, 3];
+            const caseCloseSlots = [10, 11, 0, 1];
             if (!caseCloseSlots.includes(this.state.marioFinalSlot)) {
-                this.state.lastDamageDealt = 0;
+                // Wrong position — run hammer animation but deal 0 damage, then pencil rain
                 this.state.damageNumbers.push({
                     value: 0, label: 'WRONG POSITION!',
                     x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2.5, color: '#ff4444', scale: 1.5,
                 });
-                this.startPencilRain();
-                return;
+                // Fall through to start hammer animation (applyFinalDamage will set base=0 for wrong position)
             }
         }
         // Range check: must be on ring 0 or 1
@@ -746,27 +1065,34 @@ export class Game {
             if (this.state.boss.special === 'origami_king' || this.state.boss.special === 'scissors') {
                 this.bossSpecialPending = true;
             }
-            this.transitionTo('boss_attack');
-            this.doBossAttack();
+            this.startEnemyTurn();
             return;
         }
         // Boss 0 non-stunned in case-close zone: case closes on hammer connect
         if (this.state.bossIndex === 0 && !this.state.bossStunned) {
-            this.state.pencilCaseClosed = true;
+            const caseCloseSlots2 = [10, 11, 0, 1];
+            if (caseCloseSlots2.includes(this.state.marioFinalSlot)) {
+                this.state.pencilCaseClosed = true;
+            }
         }
         this.state.attackChoice = 'hammer';
         this.state.attackAnimT = 0;
         this.state.attackTimingPressed = false;
-        this.state.attackPerfect = false;
+        this.state.attackQuality = 'none';
+        this.state.bossAttackName = 'HAMMER!';
         this.transitionTo('mario_hammer');
     }
     applyFinalDamage(type, perfect) {
-        let base = type === 'jump' ? 30 : 50;
+        const heartBonus = this.state.maxUpHeartsBought * 2;
+        const quality = this.state.attackQuality;
+        // Base damage per quality tier
+        const jumpDmg = { none: 6, nice: 7, great: 8, excellent: 9 };
+        const hammerDmg = { none: 7, nice: 8, great: 10, excellent: 12 };
+        let base = (type === 'jump' ? jumpDmg[quality] : hammerDmg[quality]) + heartBonus;
         if (this.state.bossIndex === 0) {
-            base = type === 'jump' ? 6 : 7;
             if (!this.state.bossStunned) {
-                const backSlots = [11, 0, 1, 2, 3];
-                const frontSlots = [6, 7, 8];
+                const backSlots = [10, 11, 0, 1];
+                const frontSlots = [4, 5, 6];
                 if (frontSlots.includes(this.state.marioFinalSlot) && type === 'jump') {
                     const bounceDmg = this.applyGuardReduction(6);
                     this.state.playerHp = Math.max(0, this.state.playerHp - bounceDmg);
@@ -782,9 +1108,9 @@ export class Game {
                 }
             }
         }
-        const perfMult = perfect ? 1.5 : 1.0;
+        const perfMult = 1.0; // quality already baked in
         const hit = Math.round(base * this.state.marioDamageMult * perfMult);
-        const total = (hit * this.state.marioAttackCount) + this.state.coinBonus;
+        const total = hit + (this.state.attacksRemaining <= 1 ? this.state.coinBonus : 0);
         this.state.boss.hp = Math.max(0, this.state.boss.hp - total);
         this.state.lastDamageDealt = total;
         // Check for Rainbow Roll trigger (boss 0 HP drops to half)
@@ -799,18 +1125,32 @@ export class Game {
         }
         this.state.damageNumbers.push({
             value: hit, x: RING_CX - 20, y: RING_CY - 50, alpha: 1, vy: -2.5,
-            color: perfect ? '#ffdd00' : '#ff6644', scale: 1.5,
-            label: perfect ? `PERFECT! ${hit}` : undefined, effectType: 'damage',
+            color: quality === 'excellent' ? '#ffdd00' : quality === 'great' ? '#88ff44' : quality === 'nice' ? '#44ddff' : '#ff6644',
+            scale: 1.5,
+            label: quality === 'excellent' ? 'EXCELLENT!' : quality === 'great' ? 'GREAT!' : quality === 'nice' ? 'NICE!' : undefined,
+            effectType: 'damage',
         });
-        if (this.state.marioAttackCount > 1) {
-            this.state.damageNumbers.push({
-                value: hit, x: RING_CX + 20, y: RING_CY - 30, alpha: 1, vy: -2,
-                color: perfect ? '#ffdd00' : '#ff6644', scale: 1.5, effectType: 'damage',
-            });
-        }
         this.spawnFlash('boss', perfect ? '#ffdd44' : '#ffffff');
         if (this.state.boss.hp <= 0) {
-            this.handleBossDefeated();
+            if (this.state.bossIndex === 1 && !this.state.rubberBandSoloMode) {
+                // Boots/hammer killing blow — enter solo mode; boss still gets an enemy turn
+                this.state.rubberBandSoloMode = true;
+                this.state.boss.hp = 1;
+                // Fall through to normal post-attack routing (startEnemyTurn)
+            }
+            else {
+                this.handleBossDefeated();
+                return;
+            }
+        }
+        // Second attack check
+        if (this.state.attacksRemaining > 1 && this.state.boss.hp > 0) {
+            this.state.attacksRemaining--;
+            this.state.attackQuality = 'none';
+            this.state.attackTimingPressed = false;
+            this.state.attackAnimT = 0;
+            this.state.attackChoice = 'pending';
+            this.transitionTo('attack_choice');
             return;
         }
         // Boss 0 specific post-attack routing
@@ -856,8 +1196,7 @@ export class Game {
         if (this.state.boss.special === 'origami_king' || this.state.boss.special === 'scissors') {
             this.bossSpecialPending = true;
         }
-        this.transitionTo('boss_attack');
-        this.doBossAttack();
+        this.startEnemyTurn();
     }
     generatePrimaryTargets() {
         const count = 4 + Math.floor(Math.random() * 3); // 4, 5, or 6
@@ -927,6 +1266,12 @@ export class Game {
         // Store alive count in pencilRainCount for damage calc
         this.state.pencilRainCount = aliveCount;
         this.transitionTo('rainbow_roll_attack');
+    }
+    startSoloSnapbackCycle() {
+        // After a failed grab cycle, go back to setup — setup will show the charge warning,
+        // then puzzle lets Mario line up a new magic circle
+        this.state.bossAttackName = '';
+        this.transitionTo('setup');
     }
     marioScreenPos() {
         const slotAngle = ((this.state.marioSlot + 0.5) / 12) * Math.PI * 2 - Math.PI / 2;
@@ -1134,6 +1479,17 @@ export class Game {
             maxUpHeartsBought: this.state.maxUpHeartsBought,
             bossFirstClear: [...this.state.bossFirstClear],
         };
+        try {
+            localStorage.setItem('pmBossRush', JSON.stringify({
+                coins: preserved.coins,
+                accessories: preserved.accessories,
+                maxUpHeartsBought: preserved.maxUpHeartsBought,
+                maxUpHeartsInStock: preserved.maxUpHeartsInStock,
+                bossFirstClear: preserved.bossFirstClear,
+                nextBossIndex: 0,
+            }));
+        }
+        catch (_) { }
         const newState = this.createInitialState();
         newState.phase = 'main_menu';
         newState.coins = preserved.coins;
@@ -1190,6 +1546,8 @@ export class Game {
     update(dt) {
         this.tick += dt;
         this.state.tick = this.tick;
+        if (this.state.paused)
+            return; // freeze all updates while paused
         const state = this.state;
         // Update damage numbers
         const aliveDmgNums = [];
@@ -1225,6 +1583,9 @@ export class Game {
                 state.slideAnim = null;
             }
         }
+        // Update envelope timer (always ticks down)
+        if (state.envelopeTimer > 0)
+            state.envelopeTimer = Math.max(0, state.envelopeTimer - dt);
         switch (state.phase) {
             case 'title':
                 state.titleRingAngle += 0.0008 * dt;
@@ -1246,6 +1607,24 @@ export class Game {
                     state.bossAttackName = 'PRIMARY TARGET';
                     this.transitionTo('primary_target');
                 }
+                else if (state.bossIndex === 1) {
+                    if (state.rubberBandSoloMode) {
+                        // Solo phase: show charge warning, then let Mario arrange a new magic circle
+                        state.soloSnapbackChargeTimer = 3000;
+                        state.bossAttackName = 'SOLO SNAPBACK CHARGING...';
+                        this.transitionTo('solo_snapback_charge');
+                    }
+                    else if (state.marioTied) {
+                        state.trappedSnapbackTimer = 3000;
+                        state.bossAttackName = 'TRAPPED SNAPBACK!';
+                        this.transitionTo('trapped_snapback');
+                    }
+                    else {
+                        state.pullbackTimer = 2500;
+                        state.bossAttackName = 'BUMPER BANDS!';
+                        this.transitionTo('bumper_bands');
+                    }
+                }
                 else {
                     this.transitionTo('puzzle');
                 }
@@ -1258,6 +1637,153 @@ export class Game {
                     this.transitionTo('puzzle');
                 }
                 break;
+            case 'bumper_bands': {
+                state.pullbackTimer = Math.max(0, state.pullbackTimer - dt);
+                if (state.pullbackTimer <= 0) {
+                    state.bossAttackName = '';
+                    this.transitionTo('puzzle');
+                }
+                break;
+            }
+            case 'rubber_bind': {
+                const BIND_TRAVEL = 900;
+                const BIND_BLOCK_START = 0.28;
+                const BIND_BLOCK_END = 0.65;
+                const BIND_DELAY = 900;
+                if (state.rubberBindDelayTimer > 0) {
+                    state.rubberBindDelayTimer = Math.max(0, state.rubberBindDelayTimer - dt);
+                    if (state.rubberBindDelayTimer <= 0) {
+                        state.rubberBindBandIndex++;
+                        if (state.rubberBindBandIndex >= 3) {
+                            state.pullbackTimer = 1200;
+                            state.bossAttackName = 'PULLBACK!';
+                            this.transitionTo('pullback');
+                        }
+                        else {
+                            state.attackProjectileT = 0;
+                            state.playerBlocked = false;
+                            state.blockWindowOpen = false;
+                        }
+                    }
+                    break;
+                }
+                state.attackProjectileT = Math.min(1, state.attackProjectileT + dt / BIND_TRAVEL);
+                if (!state.marioTied && state.attackProjectileT >= BIND_BLOCK_START && state.attackProjectileT < BIND_BLOCK_END) {
+                    state.blockWindowOpen = true;
+                }
+                else {
+                    state.blockWindowOpen = false;
+                }
+                if (state.attackProjectileT >= 1) {
+                    state.blockWindowOpen = false;
+                    if (state.playerBlocked) {
+                        this.spawnFlash('player', '#44aaff');
+                    }
+                    else {
+                        if (!state.marioTied) {
+                            state.marioTied = true;
+                            state.rubberBindPermanentDmg += 3;
+                        }
+                        const bindDmgTable = [8, 7, 7, 6];
+                        const rawDmg = bindDmgTable[Math.min(3, state.marioFinalRing)];
+                        const actualDmg = this.applyGuardReduction(rawDmg);
+                        state.playerHp = Math.max(0, state.playerHp - actualDmg);
+                        state.lastBossDamage = actualDmg;
+                        const gapRad = (1.5 * Math.PI) / 180;
+                        const arcSpan = (2 * Math.PI) / 12;
+                        const startAngle = (state.marioFinalSlot / 12) * Math.PI * 2 - Math.PI / 2 + gapRad / 2;
+                        const midAngle = startAngle + (arcSpan - gapRad) / 2;
+                        const midR = BOSS_RADIUS + (state.marioFinalRing + 0.5) * RING_WIDTH;
+                        const mpx = RING_CX + Math.cos(midAngle) * midR;
+                        const mpy = RING_CY + Math.sin(midAngle) * midR;
+                        state.damageNumbers.push({
+                            value: actualDmg, x: mpx, y: mpy - 30,
+                            alpha: 1, vy: -2, color: '#ff4444', scale: 1.4,
+                            label: 'TIED!', effectType: 'damage',
+                        });
+                        this.spawnFlash('player', '#ff4400');
+                        if (state.playerHp <= 0) {
+                            this.transitionTo('game_over');
+                            break;
+                        }
+                    }
+                    state.rubberBindDelayTimer = BIND_DELAY;
+                }
+                break;
+            }
+            case 'snapback': {
+                const SNAPBACK_TRAVEL = 1600; // ms for boss to approach
+                const SNAPBACK_BLOCK_START = 0.35;
+                const SNAPBACK_BLOCK_END = 0.7;
+                state.snapbackT = Math.min(1, state.snapbackT + dt / SNAPBACK_TRAVEL);
+                if (state.snapbackT >= SNAPBACK_BLOCK_START && state.snapbackT < SNAPBACK_BLOCK_END) {
+                    state.blockWindowOpen = true;
+                }
+                else {
+                    state.blockWindowOpen = false;
+                }
+                if (state.snapbackT >= 1) {
+                    state.blockWindowOpen = false;
+                    const rawDmg = 16;
+                    const actualDmg = state.snapbackBlocked ? this.applyGuardReduction(8) : this.applyGuardReduction(rawDmg);
+                    state.playerHp = Math.max(0, state.playerHp - actualDmg);
+                    state.lastBossDamage = actualDmg;
+                    const mp = this.marioScreenPos();
+                    state.damageNumbers.push({
+                        value: actualDmg, x: mp.x, y: mp.y - 30,
+                        alpha: 1, vy: -2.5, color: '#ff4444', scale: 1.5,
+                        label: state.snapbackBlocked ? `BLOCKED! -${actualDmg}` : `SNAPBACK! -${actualDmg}`,
+                        effectType: 'damage',
+                    });
+                    this.spawnFlash('player', state.snapbackBlocked ? '#44aaff' : '#ff4400');
+                    state.bossAttackName = '';
+                    if (state.playerHp <= 0) {
+                        this.transitionTo('game_over');
+                    }
+                    else {
+                        // Snapback doesn't deplete rubber bands — go straight to pullback
+                        state.pullbackTimer = 1200;
+                        state.bossAttackName = 'PULLBACK!';
+                        this.transitionTo('pullback');
+                    }
+                }
+                break;
+            }
+            case 'trapped_snapback': {
+                state.trappedSnapbackTimer = Math.max(0, state.trappedSnapbackTimer - dt);
+                if (state.trappedSnapbackTimer <= 0) {
+                    const snapRanges = [[20, 25], [16, 21], [14, 19], [12, 17]];
+                    const [minDmg, maxDmg] = snapRanges[Math.min(3, state.marioFinalRing)];
+                    const rawDmg = minDmg + Math.floor(Math.random() * (maxDmg - minDmg + 1));
+                    const actualDmg = rawDmg; // unblockable, no guard reduction
+                    state.playerHp = Math.max(0, state.playerHp - actualDmg);
+                    state.lastBossDamage = actualDmg;
+                    const gapRad = (1.5 * Math.PI) / 180;
+                    const arcSpan = (2 * Math.PI) / 12;
+                    const startAngle = (state.marioFinalSlot / 12) * Math.PI * 2 - Math.PI / 2 + gapRad / 2;
+                    const midAngle = startAngle + (arcSpan - gapRad) / 2;
+                    const midR = BOSS_RADIUS + (state.marioFinalRing + 0.5) * RING_WIDTH;
+                    const mpx = RING_CX + Math.cos(midAngle) * midR;
+                    const mpy = RING_CY + Math.sin(midAngle) * midR;
+                    state.damageNumbers.push({
+                        value: actualDmg, x: mpx, y: mpy - 30,
+                        alpha: 1, vy: -3, color: '#ff2200', scale: 2.0,
+                        label: 'SNAPBACK!', effectType: 'damage',
+                    });
+                    this.spawnFlash('player', '#ff0000');
+                    state.marioTied = false;
+                    state.bossAttackName = '';
+                    if (state.playerHp <= 0) {
+                        this.transitionTo('game_over');
+                    }
+                    else {
+                        state.pullbackTimer = 1200;
+                        state.bossAttackName = 'PULLBACK!';
+                        this.transitionTo('pullback');
+                    }
+                }
+                break;
+            }
             case 'puzzle':
                 state.puzzleTimer -= dt;
                 if (state.puzzleTimer <= 0) {
@@ -1268,8 +1794,7 @@ export class Game {
                 const path = state.marioWalkPath;
                 if (path.length === 0) {
                     // No path at all — go straight to boss attack
-                    this.transitionTo('boss_attack');
-                    this.doBossAttack();
+                    this.startEnemyTurn();
                     break;
                 }
                 const step = path[state.marioWalkStep];
@@ -1303,7 +1828,8 @@ export class Game {
                         });
                     }
                     else if (step.panel === 'plus_one') {
-                        state.marioAttackCount = 2;
+                        state.marioAttackCount = 1; // no longer doubles damage
+                        state.attacksRemaining = 2; // gives a second attack choice
                         state.damageNumbers.push({
                             value: 0,
                             label: '+1 ATTACK!',
@@ -1385,6 +1911,28 @@ export class Game {
                             scale: 1.1,
                         });
                     }
+                    else if (step.panel === 'envelope') {
+                        // Determine message based on game state
+                        let msg = '';
+                        if (state.bossIndex === 0) {
+                            if (state.noReloadMode) {
+                                msg = "You're almost done! Attack it to finish it off!";
+                            }
+                            else if (state.rainbowRollReady) {
+                                msg = "Be bold! Just grab those pencils head-on with the 1,000-Fold Arms. If it attacks, stay calm and guard!";
+                            }
+                            else if (state.bossStunned) {
+                                msg = "When it runs out of missiles, that's your chance! Attack inside the case, but don't get TOO close!";
+                            }
+                            else {
+                                msg = "Avoid the targeted panels, sneak behind the case, then whack the lid with your hammer!";
+                            }
+                        }
+                        if (msg) {
+                            state.envelopeMessage = msg;
+                            state.envelopeTimer = 5000;
+                        }
+                    }
                     // Advance to next step
                     state.marioWalkStep++;
                     state.marioWalkTimer = 0;
@@ -1396,10 +1944,19 @@ export class Game {
                         if (state.bossIndex === 0 && state.marioReachedMagicCircle && state.rainbowRollReady) {
                             // Rainbow Roll intercept
                             state.rainbowRollReady = false;
-                            // Random starting offset ±2 or ±3 so player must align
                             const sign = Math.random() < 0.5 ? 1 : -1;
                             state.pencilGrabHandsPos = sign * (2 + Math.floor(Math.random() * 2));
                             state.pencilGrabGripped = false;
+                            state.pencilGrabMode = 'rainbow';
+                            this.transitionTo('pencil_grab');
+                        }
+                        else if (state.bossIndex === 0 && state.marioReachedMagicCircle && !state.bossStunned) {
+                            // 1000-fold arms to close the pencil case (from magic circle)
+                            const sign = Math.random() < 0.5 ? 1 : -1;
+                            state.pencilGrabHandsPos = sign * (1 + Math.floor(Math.random() * 3));
+                            state.pencilGrabGripped = false;
+                            state.pencilGrabMode = 'case_close';
+                            state.bossAttackName = '1000-FOLD ARMS!';
                             this.transitionTo('pencil_grab');
                         }
                         else if (state.bossIndex === 0) {
@@ -1407,10 +1964,27 @@ export class Game {
                             state.bossAttackName = 'PENCILS FIRE!';
                             this.transitionTo('pencil_cutscene');
                         }
+                        else if (state.marioReachedMagicCircle && state.bossIndex === 1 && state.rubberBandSoloMode) {
+                            // Solo phase: Mario reached the magic circle needed to grab the band
+                            state.bossAttackName = 'GRAB THE BAND!';
+                            this.transitionTo('solo_grab_attempt');
+                        }
+                        else if (state.marioReachedMagicCircle && state.bossIndex === 1) {
+                            // Boss 1 first phase: 1000-fold arms grab mechanic
+                            const sign = Math.random() < 0.5 ? 1 : -1;
+                            state.armsGrabHandsPos = sign * (1 + Math.floor(Math.random() * 3));
+                            state.armsGrabGripped = false;
+                            state.armsPullHeld = false;
+                            state.armsPullT = 0;
+                            state.armsPullDamageDealt = false;
+                            state.bossAttackName = '1000-FOLD ARMS!';
+                            this.transitionTo('arms_grab');
+                        }
                         else if (state.marioReachedMagicCircle) {
-                            // Start mash attack
+                            // Start mash attack (other bosses)
                             state.mashTimer = 5000;
                             state.mashDamageTotal = 0;
+                            state.bossAttackName = '1000-FOLD ARMS!';
                             this.transitionTo('mario_mash');
                         }
                         else if (state.marioReachedAction) {
@@ -1425,9 +1999,51 @@ export class Game {
                             if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') {
                                 this.bossSpecialPending = true;
                             }
-                            this.transitionTo('boss_attack');
-                            this.doBossAttack();
+                            this.startEnemyTurn();
                         }
+                    }
+                }
+                break;
+            }
+            case 'arms_grab': {
+                if (state.armsGrabGripped) {
+                    const PULL_RATE = 0.4; // 0..1 over ~2.5 seconds of holding
+                    if (state.armsPullHeld) {
+                        state.armsPullT = Math.min(1, state.armsPullT + dt * PULL_RATE / 1000);
+                    }
+                    else if (state.armsPullT > 0 && !state.armsPullDamageDealt) {
+                        // Released — deal damage based on pull amount and Mario's ring
+                        state.armsPullDamageDealt = true;
+                        const inRange = state.marioFinalRing <= 1;
+                        let rawDmg;
+                        if (inRange) {
+                            rawDmg = 20 + Math.round(state.armsPullT * 20); // 20-40 based on pull
+                        }
+                        else {
+                            rawDmg = 1; // outer rings — minimal damage
+                        }
+                        const dmg = rawDmg;
+                        // Permanent damage (not restored by pullback)
+                        state.rubberBindPermanentDmg += dmg;
+                        state.boss.hp = Math.max(0, state.boss.hp - dmg);
+                        state.lastDamageDealt = dmg;
+                        state.damageNumbers.push({
+                            value: dmg, x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -2.5,
+                            color: inRange ? '#ff4444' : '#ffaa44', scale: 1.5,
+                            label: inRange ? `YANK! -${dmg}` : `WEAK! -${dmg}`, effectType: 'damage',
+                        });
+                        this.spawnFlash('boss', '#ff4400');
+                        state.armsPullT = 0;
+                        // Arms kill check — permanent solo mode
+                        if (state.bossIndex === 1 && !state.rubberBandSoloMode && state.boss.hp <= 0) {
+                            state.rubberBandSoloMode = true;
+                            state.boss.hp = 1;
+                            state.soloBootsHammerRestoreHp = 0; // arms kill — no restore
+                        }
+                        // Done — go to pullback
+                        state.pullbackTimer = 1200;
+                        state.bossAttackName = 'PULLBACK!';
+                        this.transitionTo('pullback');
                     }
                 }
                 break;
@@ -1439,8 +2055,8 @@ export class Game {
                 const JUMP_DURATION = 1200;
                 state.attackAnimT = Math.min(1, state.attackAnimT + dt / JUMP_DURATION);
                 if (state.attackAnimT >= 1.0) {
-                    // Apply damage (perfect if Space was pressed in the window)
-                    this.applyFinalDamage('jump', state.attackPerfect);
+                    // Apply damage (quality already set when Space was pressed)
+                    this.applyFinalDamage('jump', state.attackQuality === 'excellent');
                 }
                 break;
             }
@@ -1451,7 +2067,7 @@ export class Game {
                     if (state.attackAnimT >= 1.0) {
                         // Auto-apply normal damage (player was too slow or missed)
                         state.attackTimingPressed = true;
-                        state.attackPerfect = false;
+                        state.attackQuality = 'none';
                         this.applyFinalDamage('hammer', false);
                     }
                 }
@@ -1472,8 +2088,7 @@ export class Game {
                     if (state.boss.special === 'origami_king' || state.boss.special === 'scissors') {
                         this.bossSpecialPending = true;
                     }
-                    this.transitionTo('boss_attack');
-                    this.doBossAttack();
+                    this.startEnemyTurn();
                 }
                 break;
             }
@@ -1664,6 +2279,21 @@ export class Game {
                 }
                 break;
             }
+            case 'pullback': {
+                state.pullbackTimer = Math.max(0, state.pullbackTimer - dt);
+                if (state.pullbackTimer <= 0) {
+                    if (state.rubberBandSoloMode) {
+                        // Keep HP at 1 — solo sequence requires a new magic circle next puzzle
+                        state.boss.hp = 1;
+                    }
+                    else {
+                        state.boss.hp = Math.max(0, state.rubberBandCount * state.rubberBandHpPerBand - state.rubberBindPermanentDmg);
+                    }
+                    state.bossAttackName = '';
+                    this.transitionTo('setup');
+                }
+                break;
+            }
             case 'rainbow_roll_attack': {
                 const RRTRAVEL = 2800;
                 const RR_BLOCK_START = 0.55;
@@ -1695,6 +2325,147 @@ export class Game {
                     }
                     else {
                         this.transitionTo('setup');
+                    }
+                }
+                break;
+            }
+            case 'solo_snapback_charge': {
+                state.soloSnapbackChargeTimer = Math.max(0, state.soloSnapbackChargeTimer - dt);
+                if (state.soloSnapbackChargeTimer <= 0) {
+                    // Reset grab state fresh for the upcoming magic circle encounter
+                    state.soloGrabAttempt = 0;
+                    state.soloGrabTimer = 0;
+                    state.soloGrabSubPhase = 'moving';
+                    state.soloGrabBandPos = 0;
+                    state.soloGrabGripped = false;
+                    state.soloGrabPauseTimer = 0;
+                    state.blockWindowOpen = false;
+                    state.playerBlocked = false;
+                    state.snapbackBlocked = false;
+                    state.bossAttackName = '';
+                    this.transitionTo('puzzle');
+                }
+                break;
+            }
+            case 'solo_grab_attempt': {
+                if (state.soloGrabSubPhase === 'moving') {
+                    state.soloGrabTimer += dt;
+                    // 3 oscillation cycles in 3000ms
+                    state.soloGrabBandPos = Math.sin(state.soloGrabTimer * 0.00628) * 3;
+                    if (state.soloGrabTimer >= 3000) {
+                        state.soloGrabSubPhase = state.soloGrabAttempt === 0 ? 'paused_left' : 'paused_right';
+                        state.soloGrabBandPos = state.soloGrabAttempt === 0 ? -3 : 3;
+                        state.soloGrabPauseTimer = 1000;
+                    }
+                }
+                else {
+                    state.soloGrabPauseTimer = Math.max(0, state.soloGrabPauseTimer - dt);
+                    if (state.soloGrabGripped) {
+                        // Success — grip secured, go to slam
+                        state.soloSlamTimer = 5000;
+                        state.soloSlamCount = 0;
+                        state.soloSlamCooldown = 0;
+                        state.bossAttackName = 'SOLO SLAM!';
+                        this.transitionTo('solo_slam');
+                    }
+                    else if (state.soloGrabPauseTimer <= 0) {
+                        if (state.soloGrabAttempt === 0) {
+                            // First attempt failed — try second
+                            state.soloGrabAttempt = 1;
+                            state.soloGrabSubPhase = 'moving';
+                            state.soloGrabTimer = 0;
+                            state.soloGrabBandPos = 0;
+                        }
+                        else {
+                            // Both attempts failed — strike then solo snapback attack
+                            const rawDmg = 21 + Math.floor(Math.random() * 2);
+                            const actualDmg = this.applyGuardReduction(rawDmg);
+                            state.playerHp = Math.max(0, state.playerHp - actualDmg);
+                            state.lastBossDamage = actualDmg;
+                            const mp = this.marioScreenPos();
+                            state.damageNumbers.push({
+                                value: actualDmg, x: mp.x, y: mp.y - 30,
+                                alpha: 1, vy: -2.5, color: '#ff4444', scale: 1.8,
+                                label: `BAND STRIKE! -${actualDmg}`, effectType: 'damage',
+                            });
+                            this.spawnFlash('player', '#ff0000');
+                            if (state.playerHp <= 0) {
+                                this.transitionTo('game_over');
+                                break;
+                            }
+                            state.soloSnapbackAttackT = 0;
+                            state.blockWindowOpen = false;
+                            state.playerBlocked = false;
+                            state.snapbackBlocked = false;
+                            state.bossAttackName = 'SOLO SNAPBACK!';
+                            this.transitionTo('solo_snapback_attack');
+                        }
+                    }
+                }
+                break;
+            }
+            case 'solo_snapback_attack': {
+                const SOLO_TRAVEL = 1800;
+                const SOLO_BLOCK_START = 0.35;
+                const SOLO_BLOCK_END = 0.72;
+                state.soloSnapbackAttackT = Math.min(1, state.soloSnapbackAttackT + dt / SOLO_TRAVEL);
+                if (state.soloSnapbackAttackT >= SOLO_BLOCK_START && state.soloSnapbackAttackT < SOLO_BLOCK_END) {
+                    state.blockWindowOpen = true;
+                }
+                else {
+                    state.blockWindowOpen = false;
+                }
+                if (state.soloSnapbackAttackT >= 1) {
+                    state.blockWindowOpen = false;
+                    const snapRanges = [[56, 61], [53, 58], [50, 55], [45, 50]];
+                    const [minDmg, maxDmg] = snapRanges[Math.min(3, state.marioFinalRing)];
+                    const rawFull = minDmg + Math.floor(Math.random() * (maxDmg - minDmg + 1));
+                    const rawDmg = state.snapbackBlocked ? Math.ceil(rawFull / 2) : rawFull;
+                    const actualDmg = this.applyGuardReduction(rawDmg);
+                    state.playerHp = Math.max(0, state.playerHp - actualDmg);
+                    state.lastBossDamage = actualDmg;
+                    const mp = this.marioScreenPos();
+                    state.damageNumbers.push({
+                        value: actualDmg, x: mp.x, y: mp.y - 30,
+                        alpha: 1, vy: -3, color: '#ff2200', scale: 2.2,
+                        label: state.snapbackBlocked ? `BLOCKED! -${actualDmg}` : `SOLO SNAPBACK! -${actualDmg}`,
+                        effectType: 'damage',
+                    });
+                    this.spawnFlash('player', state.snapbackBlocked ? '#44aaff' : '#ff0000');
+                    if (state.playerHp <= 0) {
+                        this.transitionTo('game_over');
+                    }
+                    else {
+                        this.startSoloSnapbackCycle();
+                    }
+                }
+                break;
+            }
+            case 'solo_slam': {
+                state.soloSlamCooldown = Math.max(0, state.soloSlamCooldown - dt);
+                state.soloSlamTimer = Math.max(0, state.soloSlamTimer - dt);
+                if (state.soloSlamTimer <= 0) {
+                    state.soloPullHeld = false;
+                    state.soloPullT = 0;
+                    state.soloSlingshotLaunched = false;
+                    state.soloSlingshotT = 0;
+                    state.bossAttackName = 'SLINGSHOT!';
+                    this.transitionTo('solo_slingshot');
+                }
+                break;
+            }
+            case 'solo_slingshot': {
+                if (state.soloSlingshotLaunched) {
+                    state.soloSlingshotT = Math.min(1, state.soloSlingshotT + dt / 1200);
+                    if (state.soloSlingshotT >= 1) {
+                        this.handleBossDefeated();
+                    }
+                }
+                else if (state.soloPullHeld) {
+                    state.soloPullT = Math.min(1, state.soloPullT + dt / 1500);
+                    if (state.soloPullT >= 1) {
+                        state.soloPullHeld = false;
+                        state.soloSlingshotLaunched = true;
                     }
                 }
                 break;

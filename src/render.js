@@ -1,4 +1,4 @@
-import { BOSS_DRAW_FNS, drawBoss0WithPencils } from './bosses';
+import { BOSS_DRAW_FNS, drawBoss0WithPencils, drawBoss1Solo } from './bosses';
 import { NUM_RINGS, NUM_PANELS, simulatePath } from './rings';
 import titleBgSrc from '../LegionofStationery.webp';
 import menuBgSrc from '../91307770_p0_master1200.jpg';
@@ -40,7 +40,7 @@ export const RING_CY = 350;
 export const BOSS_RADIUS = 70;
 export const RING_WIDTH = 50;
 export const ARC_GAP_DEG = 1.5; // degrees gap between panels
-const MARIO_SLOT = 8;
+const MARIO_SLOT = 6;
 // Panel fill colors
 const PANEL_COLORS = {
     empty: '',
@@ -54,7 +54,10 @@ const PANEL_COLORS = {
     treasure_chest: '#aa6600',
     on_panel: '#22aa44',
     magic_circle: '#222222',
+    arrow_down: '#336633',
+    envelope: '#dd6600',
     coin: '#ffdd00',
+    rubber_band: '#cc4400',
 };
 // Ring background colors — warm tones matching screenshot
 const RING_BG_COLORS = ['#d4872a', '#e0a030', '#c8b870', '#b8a860'];
@@ -242,6 +245,49 @@ function drawPanelIcon(ctx, panelType, x, y, size, midAngle, midR, slotIndex, ri
                 ctx.arc(Math.cos(a) * size * 0.35, Math.sin(a) * size * 0.35, 2, 0, Math.PI * 2);
                 ctx.fill();
             }
+            break;
+        }
+        case 'arrow_down': {
+            ctx.restore();
+            const outwardAngle = Math.atan2(y - ringCy, x - ringCx);
+            drawArrowTriangle(ctx, x, y, outwardAngle + Math.PI / 2, size * 0.9);
+            return;
+        }
+        case 'envelope': {
+            // Orange rectangle with ?
+            ctx.fillStyle = '#dd6600';
+            ctx.fillRect(-size * 0.8, -size * 0.6, size * 1.6, size * 1.0);
+            ctx.strokeStyle = '#ff9900';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(-size * 0.8, -size * 0.6, size * 1.6, size * 1.0);
+            // Flap (triangle at top)
+            ctx.fillStyle = '#ff8800';
+            ctx.beginPath();
+            ctx.moveTo(-size * 0.8, -size * 0.6);
+            ctx.lineTo(0, -size * 0.1);
+            ctx.lineTo(size * 0.8, -size * 0.6);
+            ctx.fill();
+            // Question mark
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${Math.round(size * 0.8)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('?', 0, size * 0.1);
+            break;
+        }
+        case 'rubber_band': {
+            // Orange rubber band ring
+            ctx.strokeStyle = '#ff8800';
+            ctx.lineWidth = size * 0.6;
+            ctx.beginPath();
+            ctx.arc(0, 0, size * 0.5, 0, Math.PI * 2);
+            ctx.stroke();
+            // Highlight arc
+            ctx.strokeStyle = '#ffaa55';
+            ctx.lineWidth = size * 0.18;
+            ctx.beginPath();
+            ctx.arc(-size * 0.15, -size * 0.25, size * 0.4, Math.PI * 1.1, Math.PI * 1.7);
+            ctx.stroke();
             break;
         }
         case 'coin': {
@@ -556,7 +602,10 @@ export function drawBossCircle(ctx, state, tick) {
     ctx.stroke();
     // Draw boss art
     if (state.bossIndex === 0) {
-        drawBoss0WithPencils(ctx, RING_CX, RING_CY, BOSS_RADIUS, tick, state.pencilsAlive);
+        drawBoss0WithPencils(ctx, RING_CX, RING_CY, BOSS_RADIUS, tick, state.pencilsAlive, state.pencilCaseClosed);
+    }
+    else if (state.bossIndex === 1 && state.rubberBandSoloMode) {
+        drawBoss1Solo(ctx, RING_CX, RING_CY, BOSS_RADIUS, tick);
     }
     else {
         const drawFn = BOSS_DRAW_FNS[state.bossIndex];
@@ -603,6 +652,13 @@ export function drawLeftSidebar(ctx, state) {
     ctx.font = '10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(`${boss.hp} / ${boss.maxHp}`, 80, barY + 13);
+    // Boss 1: show rubber band count
+    if (state.bossIndex === 1) {
+        ctx.fillStyle = '#ff8800';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Bands: ${state.rubberBandCount}/10`, 80, barY + 32);
+    }
     // Boss portrait area
     ctx.fillStyle = '#444';
     ctx.fillRect(15, 130, 130, 130);
@@ -839,7 +895,7 @@ function getPhaseHint(state) {
             return '';
         }
         case 'mario_walk':
-            return 'Mario is walking the path...';
+            return state.envelopeMessage ? '📨 Reading envelope...' : 'Mario is walking the path...';
         case 'mario_mash':
             return 'MASH SPACE to smash the boss! [I] for mushroom';
         case 'boss_attack':
@@ -858,6 +914,34 @@ function getPhaseHint(state) {
             return state.noReloadMode ? 'Worse Case — boss is weakened!' : 'Boss is reloading pencils...';
         case 'pencil_grab':
             return '← → Align arms, SPACE to grip';
+        case 'bumper_bands':
+            return 'Rubber Band is spreading bands across the rings!';
+        case 'pullback':
+            return 'Rubber bands returning — HP being restored...';
+        case 'rubber_bind':
+            return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'Rubber Band is launching bands!';
+        case 'arms_grab':
+            return state.armsGrabGripped
+                ? (state.armsPullHeld ? 'Pulling... release ↓ to deal damage!' : 'Hold ↓ to pull the rubber bands!')
+                : '← → Align arms, SPACE to grip rubber bands';
+        case 'snapback':
+            return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'Rubber Band is rushing in!';
+        case 'trapped_snapback':
+            return state.marioTied ? "Tied up — can't move!" : 'TRAPPED SNAPBACK incoming!';
+        case 'solo_snapback_charge':
+            return 'Line up a Magic Circle to grab the band!';
+        case 'solo_grab_attempt': {
+            const sub = state.soloGrabSubPhase;
+            if (sub === 'moving')
+                return 'Wait for the band to slow down...';
+            return 'PRESS SPACE to grip the band!';
+        }
+        case 'solo_snapback_attack':
+            return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'SOLO SNAPBACK incoming!';
+        case 'solo_slam':
+            return 'MASH SPACE to slam the band!';
+        case 'solo_slingshot':
+            return state.soloSlingshotLaunched ? 'LAUNCHING...' : 'Hold ↓ to charge, release to SLINGSHOT!';
         case 'save_prompt':
             return '← → navigate   ENTER confirm';
         default:
@@ -1014,11 +1098,13 @@ function drawJumpAnimation(ctx, state) {
         }
     }
     else {
-        ctx.fillStyle = state.attackPerfect ? '#ffdd00' : '#aaaaaa';
+        const qualityText = { excellent: 'EXCELLENT!', great: 'GREAT!', nice: 'NICE!', none: 'HIT!' };
+        const txt = qualityText[state.attackQuality];
+        const qualityColor = { excellent: '#ffdd00', great: '#88ff44', nice: '#44ddff', none: '#aaaaaa' };
+        ctx.fillStyle = qualityColor[state.attackQuality];
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 3;
         ctx.font = 'bold 22px monospace';
-        const txt = state.attackPerfect ? 'PERFECT!' : 'HIT!';
         ctx.strokeText(txt, RING_CX, RING_CY - BOSS_RADIUS - 20);
         ctx.fillText(txt, RING_CX, RING_CY - BOSS_RADIUS - 20);
     }
@@ -1026,7 +1112,9 @@ function drawJumpAnimation(ctx, state) {
 }
 function drawHammerGauge(ctx, state, tick) {
     const T = state.attackAnimT;
-    const PERFECT_START = 0.82;
+    const NICE_START = 0.62;
+    const GREAT_START = 0.76;
+    const EXCELLENT_START = 0.88;
     // Gauge bar
     const gx = 180, gy = 590, gw = 540, gh = 28;
     ctx.fillStyle = '#222';
@@ -1034,20 +1122,29 @@ function drawHammerGauge(ctx, state, tick) {
     ctx.fill();
     // Gauge fill — color shifts from green to yellow to red as it approaches full
     const fillW = gw * T;
-    const fillColor = T < 0.5 ? '#44cc22' : T < 0.82 ? '#ddaa00' : '#ff4422';
+    const fillColor = T < 0.5 ? '#44cc22' : T < EXCELLENT_START ? '#ddaa00' : '#ff4422';
     ctx.fillStyle = fillColor;
     ctx.fillRect(gx + 1, gy + 1, Math.max(0, fillW - 2), gh - 2);
-    // Perfect zone highlight
-    const pStart = gx + gw * PERFECT_START;
-    const pEnd = gx + gw;
+    // Quality zone highlights
     const perfPulse = 0.6 + 0.4 * Math.sin(tick * 0.012);
+    // NICE zone (cyan)
+    ctx.fillStyle = `rgba(68,200,255,${perfPulse * 0.6})`;
+    ctx.fillRect(gx + gw * NICE_START + 1, gy + 1, gw * (GREAT_START - NICE_START) - 1, gh - 2);
+    // GREAT zone (green)
+    ctx.fillStyle = `rgba(100,255,80,${perfPulse * 0.7})`;
+    ctx.fillRect(gx + gw * GREAT_START + 1, gy + 1, gw * (EXCELLENT_START - GREAT_START) - 1, gh - 2);
+    // EXCELLENT zone (gold, replaces old "PERFECT")
     ctx.fillStyle = `rgba(255,220,0,${perfPulse})`;
-    ctx.fillRect(pStart, gy + 1, pEnd - pStart - 1, gh - 2);
-    // "PERFECT ZONE" label
-    ctx.fillStyle = '#ffdd00';
-    ctx.font = 'bold 11px monospace';
+    ctx.fillRect(gx + gw * EXCELLENT_START, gy + 1, gw * (1 - EXCELLENT_START) - 1, gh - 2);
+    // Zone labels
+    ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('PERFECT', (pStart + pEnd) / 2, gy - 5);
+    ctx.fillStyle = '#44c8ff';
+    ctx.fillText('NICE', gx + gw * (NICE_START + (GREAT_START - NICE_START) / 2), gy - 4);
+    ctx.fillStyle = '#64ff50';
+    ctx.fillText('GREAT', gx + gw * (GREAT_START + (EXCELLENT_START - GREAT_START) / 2), gy - 4);
+    ctx.fillStyle = '#ffdd00';
+    ctx.fillText('EXCELLENT', gx + gw * (EXCELLENT_START + (1 - EXCELLENT_START) / 2), gy - 4);
     // Gauge border
     ctx.strokeStyle = '#666';
     ctx.lineWidth = 1;
@@ -1060,10 +1157,11 @@ function drawHammerGauge(ctx, state, tick) {
     ctx.fillText('HAMMER POWER', CANVAS_W / 2, gy - 18);
     // Instruction / result
     if (!state.attackTimingPressed) {
-        const inPerfect = T >= PERFECT_START;
+        const inAny = T >= NICE_START;
         const blink = Math.floor(Date.now() / 300) % 2 === 0;
-        if (inPerfect && blink) {
-            ctx.fillStyle = '#ffdd00';
+        if (inAny && blink) {
+            const zoneColor = T >= EXCELLENT_START ? '#ffdd00' : T >= GREAT_START ? '#88ff44' : '#44ddff';
+            ctx.fillStyle = zoneColor;
             ctx.font = 'bold 26px monospace';
             ctx.textAlign = 'center';
             ctx.strokeStyle = '#000';
@@ -1071,21 +1169,22 @@ function drawHammerGauge(ctx, state, tick) {
             ctx.strokeText('PRESS SPACE!', CANVAS_W / 2, 570);
             ctx.fillText('PRESS SPACE!', CANVAS_W / 2, 570);
         }
-        else if (!inPerfect) {
+        else if (!inAny) {
             ctx.fillStyle = '#aaaaaa';
             ctx.font = '14px monospace';
-            ctx.fillText('Wait for the perfect zone...', CANVAS_W / 2, 570);
+            ctx.fillText('Wait for the quality zone...', CANVAS_W / 2, 570);
         }
     }
     else {
         ctx.font = 'bold 22px monospace';
         ctx.textAlign = 'center';
-        ctx.fillStyle = state.attackPerfect ? '#ffdd00' : '#aaaaaa';
+        const qualityColor2 = { excellent: '#ffdd00', great: '#88ff44', nice: '#44ddff', none: '#aaaaaa' };
+        const qualityLabel = { excellent: 'EXCELLENT!', great: 'GREAT!', nice: 'NICE!', none: 'HIT!' };
+        ctx.fillStyle = qualityColor2[state.attackQuality];
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 3;
-        const txt = state.attackPerfect ? 'PERFECT HIT!' : 'HIT!';
-        ctx.strokeText(txt, CANVAS_W / 2, 570);
-        ctx.fillText(txt, CANVAS_W / 2, 570);
+        ctx.strokeText(qualityLabel[state.attackQuality], CANVAS_W / 2, 570);
+        ctx.fillText(qualityLabel[state.attackQuality], CANVAS_W / 2, 570);
     }
     // Mario hammer windup illustration (simple pixel art above gauge)
     const hamX = CANVAS_W / 2;
@@ -1124,7 +1223,8 @@ function drawMashPhase(ctx, state, tick) {
     ctx.fillText(`${timeLeft.toFixed(1)}s`, CANVAS_W / 2, barY + 14);
     ctx.fillStyle = '#ffaa00';
     ctx.font = 'bold 16px monospace';
-    ctx.fillText('MAGIC CIRCLE — MASH SPACE!', CANVAS_W / 2, barY - 8);
+    const mashTitle = state.bossIndex === 1 ? '1000-FOLD ARMS — SNAP THE BANDS!' : 'MAGIC CIRCLE — MASH SPACE!';
+    ctx.fillText(mashTitle, CANVAS_W / 2, barY - 8);
     // Hit counter — 10 circles showing hits used
     const circStartX = CANVAS_W / 2 - 4.5 * 24;
     for (let i = 0; i < 10; i++) {
@@ -1246,10 +1346,11 @@ function drawAttackChoiceOverlay(ctx, state) {
     ctx.fillStyle = '#ffffff';
     ctx.font = '13px monospace';
     ctx.fillText('Choose your attack:', CANVAS_W / 2, by + 82);
-    const jumpBase = 30;
-    const hammerBase = 50;
-    const jumpTotal = Math.round(jumpBase * damageMult) * attackCount;
-    const hammerTotal = Math.round(hammerBase * damageMult) * attackCount;
+    const heartBonus = state.maxUpHeartsBought * 2;
+    const jumpBase = 6 + heartBonus; // normal hit
+    const jumpMax = 9 + heartBonus; // excellent hit
+    const hammerBase = 7 + heartBonus;
+    const hammerMax = 12 + heartBonus;
     // [J] Jump button
     const jbx = CANVAS_W / 2 - 210;
     const jby = by + 98;
@@ -1268,7 +1369,7 @@ function drawAttackChoiceOverlay(ctx, state) {
     ctx.fillText('[J] Jump', jbx + btnW / 2, jby + 32);
     ctx.font = '12px monospace';
     ctx.fillStyle = '#ffeeaa';
-    ctx.fillText(`${jumpBase} × ${damageMult} × ${attackCount} = ${jumpTotal}`, jbx + btnW / 2, jby + 56);
+    ctx.fillText(`${jumpBase}-${jumpMax} × ${damageMult} × ${attackCount}`, jbx + btnW / 2, jby + 56);
     // [H] Hammer button
     const hbx = CANVAS_W / 2 + 20;
     const hby = by + 98;
@@ -1287,7 +1388,7 @@ function drawAttackChoiceOverlay(ctx, state) {
     ctx.font = '11px monospace';
     ctx.fillStyle = hammerInRange ? '#ffcc88' : '#ff6666';
     const rangeText = hammerInRange
-        ? `${hammerBase} × ${damageMult} × ${attackCount} = ${hammerTotal}`
+        ? `${hammerBase}-${hammerMax} × ${damageMult} × ${attackCount}`
         : `Ring ${state.marioFinalRing + 1} — OUT OF RANGE!`;
     ctx.fillText(rangeText, hbx + btnW / 2, hby + 56);
     if (!hammerInRange) {
@@ -1299,6 +1400,13 @@ function drawAttackChoiceOverlay(ctx, state) {
     ctx.font = '11px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('Press J for Jump or H for Hammer', CANVAS_W / 2, by + bh - 16);
+    // Boss 1: warn player that jump/hammer are resisted
+    if (state.bossIndex === 1) {
+        ctx.fillStyle = '#ff8800';
+        ctx.font = 'bold 13px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚠ Rubber Band resists attacks! Use Magic Circle → 1000-Fold Arms!', CANVAS_W / 2, by + bh - 36);
+    }
     ctx.restore();
 }
 function roundRect(ctx, x, y, w, h, r) {
@@ -1592,47 +1700,99 @@ export function drawGameOver(ctx) {
     }
 }
 // Draw the boss attack projectile traveling from boss to Mario
+function drawRubberBandProjectile(ctx, x, y, spin) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(spin);
+    ctx.beginPath();
+    ctx.arc(0, 0, 9, 0, Math.PI * 2);
+    ctx.strokeStyle = '#cc4400';
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 1.4);
+    ctx.strokeStyle = '#ff8844';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+}
 function drawAttackProjectile(ctx, state, tick) {
     const t = state.attackProjectileT;
     if (t <= 0 || t >= 1)
         return;
-    // Mario's position (slot 8, outer ring)
-    const slotAngle = ((MARIO_SLOT + 0.5) / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
-    const marioR = BOSS_RADIUS + 3.5 * RING_WIDTH;
-    const marioX = RING_CX + marioR * Math.cos(slotAngle);
-    const marioY = RING_CY + marioR * Math.sin(slotAngle);
-    // Ease: smoothstep
+    const marioTarget = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+    const marioX = marioTarget.x;
+    const marioY = marioTarget.y;
     const eased = t * t * (3 - 2 * t);
+    // Boss 1 (Rubber Band): draw 3 rubber band projectiles in a spread
+    if (state.bossIndex === 1) {
+        const offsets = [
+            { ox: -18, oy: 0, delay: 0 },
+            { ox: 0, oy: 0, delay: 0.08 },
+            { ox: 18, oy: 0, delay: 0.16 },
+        ];
+        const angle = Math.atan2(marioY - RING_CY, marioX - RING_CX);
+        const perpX = -Math.sin(angle);
+        const perpY = Math.cos(angle);
+        for (const { ox, delay } of offsets) {
+            const localT = Math.max(0, Math.min(1, (t - delay) / (1 - delay)));
+            const le = localT * localT * (3 - 2 * localT);
+            const px = RING_CX + (marioX - RING_CX) * le + perpX * ox;
+            const py = RING_CY + (marioY - RING_CY) * le + perpY * ox;
+            drawRubberBandProjectile(ctx, px, py, tick * 0.05);
+        }
+        void tick;
+        return;
+    }
     const px = RING_CX + (marioX - RING_CX) * eased;
     const py = RING_CY + (marioY - RING_CY) * eased;
-    // Boss-specific color (one per boss)
-    const projColors = ['#ff4466', '#ff8800', '#ffcc00', '#cc44ff', '#22cc55', '#4488ff'];
-    const projColor = projColors[Math.min(5, state.boss.id)] ?? '#ffcc00';
-    // Glow
-    const glow = ctx.createRadialGradient(px, py, 0, px, py, 22);
-    glow.addColorStop(0, projColor);
-    glow.addColorStop(1, 'transparent');
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(px, py, 22, 0, Math.PI * 2);
-    ctx.fill();
-    // Core
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(px, py, 8, 0, Math.PI * 2);
-    ctx.fill();
-    // Trail (3 fading copies behind)
-    for (let i = 1; i <= 3; i++) {
-        const trailT = Math.max(0, eased - i * 0.07);
-        const tx = RING_CX + (marioX - RING_CX) * trailT;
-        const ty = RING_CY + (marioY - RING_CY) * trailT;
-        ctx.globalAlpha = 0.3 / i;
-        ctx.fillStyle = projColor;
-        ctx.beginPath();
-        ctx.arc(tx, ty, 7 - i, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
+    // Direction of travel
+    const angle = Math.atan2(marioY - RING_CY, marioX - RING_CX);
+    const isSnapOrWorseCase = state.bossAttackName === 'SNAP SHUT' || state.bossAttackName === 'WORSE CASE';
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(angle - Math.PI / 2); // tip toward Mario
+    if (isSnapOrWorseCase) {
+        // Draw pencil case (silver rectangle)
+        ctx.fillStyle = '#cccccc';
+        ctx.fillRect(-10, -18, 20, 36);
+        ctx.fillStyle = '#aaaaaa';
+        ctx.fillRect(-10, -18, 20, 8);
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(-10, -18, 20, 36);
+        // Latch
+        ctx.fillStyle = '#ffdd44';
+        ctx.fillRect(-3, -2, 6, 6);
     }
+    else {
+        // Draw colored pencil
+        const pencilColors = ['#ff4466', '#ff8800', '#ffcc00', '#44cc55', '#4488ff', '#cc44ff'];
+        const colorIndex = Math.floor(tick * 0.01) % pencilColors.length;
+        const pencilColor = pencilColors[colorIndex];
+        // Pencil body (wood)
+        ctx.fillStyle = '#f5e070';
+        ctx.fillRect(-4, -16, 8, 24);
+        // Colored tip
+        ctx.fillStyle = pencilColor;
+        ctx.beginPath();
+        ctx.moveTo(-4, 8);
+        ctx.lineTo(4, 8);
+        ctx.lineTo(0, 18);
+        ctx.closePath();
+        ctx.fill();
+        // Eraser end
+        ctx.fillStyle = '#ffaaaa';
+        ctx.fillRect(-4, -20, 8, 6);
+        // Silver ferrule
+        ctx.fillStyle = '#cccccc';
+        ctx.fillRect(-4, -16, 8, 4);
+        // Pencil outline
+        ctx.strokeStyle = '#444';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-4, -20, 8, 30);
+    }
+    ctx.restore();
     void tick;
 }
 // Draw the block timing UI during boss_attack / pencil_rain / snap_shut phases
@@ -1762,7 +1922,7 @@ function drawPencilGrab(ctx, state, tick) {
     ctx.arc(bossCX, bossCY, zoomedRadius + 2, 0, Math.PI * 2);
     ctx.stroke();
     // Draw boss pencils at zoomed scale
-    drawBoss0WithPencils(ctx, bossCX, bossCY, zoomedRadius, tick, state.pencilsAlive);
+    drawBoss0WithPencils(ctx, bossCX, bossCY, zoomedRadius, tick, state.pencilsAlive, state.pencilCaseClosed);
     // Mario's 1000-fold arms from bottom of canvas toward the boss
     const marioFootX = CANVAS_W / 2;
     const marioFootY = CANVAS_H - 30;
@@ -1770,10 +1930,10 @@ function drawPencilGrab(ctx, state, tick) {
     const handTargetX = bossCX + armOffset;
     const handTargetY = bossCY + zoomedRadius + 20;
     const isAligned = state.pencilGrabHandsPos === 0;
-    // Arm color pulses green when aligned
+    // Arm color pulses green when aligned, red when not
     const armPulse = 0.8 + 0.2 * Math.sin(tick * 0.015);
-    const armColor = isAligned ? `rgba(100,255,120,${armPulse})` : '#f5c074';
-    ctx.strokeStyle = armColor;
+    const armColor = isAligned ? `rgba(100,255,120,${armPulse})` : '#cc2222';
+    ctx.strokeStyle = isAligned ? armColor : '#cc2222';
     ctx.lineWidth = 12;
     ctx.lineCap = 'round';
     // Left arm curve
@@ -1786,14 +1946,18 @@ function drawPencilGrab(ctx, state, tick) {
     ctx.moveTo(marioFootX + 25, marioFootY);
     ctx.bezierCurveTo(marioFootX + 40, marioFootY - 120, handTargetX + 50, handTargetY + 80, handTargetX + 24, handTargetY);
     ctx.stroke();
-    // Fists
-    ctx.fillStyle = armColor;
+    // Fists (white gloves)
+    ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(handTargetX - 24, handTargetY, 14, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 2;
+    ctx.stroke();
     ctx.beginPath();
     ctx.arc(handTargetX + 24, handTargetY, 14, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
     // Mini Mario body at bottom
     drawMarioSprite(ctx, marioFootX, marioFootY - 20);
     ctx.restore();
@@ -1811,7 +1975,10 @@ function drawPencilGrab(ctx, state, tick) {
     ctx.fillStyle = '#ffdd44';
     ctx.font = '14px monospace';
     ctx.lineWidth = 0;
-    ctx.fillText('← → Align arms over pencils, then press SPACE to grip', CANVAS_W / 2, 72);
+    const grabInstruction = state.pencilGrabMode === 'case_close'
+        ? '← → Align arms behind the case, then SPACE to slam it shut!'
+        : '← → Align arms over pencils, then press SPACE to grip';
+    ctx.fillText(grabInstruction, CANVAS_W / 2, 72);
     // Position bar
     const barCX = CANVAS_W / 2;
     const barY = CANVAS_H - 90;
@@ -1859,6 +2026,200 @@ function drawPencilGrab(ctx, state, tick) {
         ctx.fillText('Align the arms to the CENTER', CANVAS_W / 2, CANVAS_H - 105);
     }
     ctx.restore();
+}
+function drawArmsGrab(ctx, state, tick) {
+    ctx.save();
+    ctx.fillStyle = '#000a14';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    // Draw zoomed boss (rubber band) in center
+    const bossCX = CANVAS_W / 2;
+    const bossCY = CANVAS_H / 2 - 50;
+    const zoomedRadius = BOSS_RADIUS * 2.2;
+    ctx.fillStyle = '#1a1a2e';
+    ctx.beginPath();
+    ctx.arc(bossCX, bossCY, zoomedRadius + 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ff8800';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(bossCX, bossCY, zoomedRadius + 2, 0, Math.PI * 2);
+    ctx.stroke();
+    // Boss body (orange)
+    ctx.fillStyle = '#ff8800';
+    ctx.beginPath();
+    ctx.arc(bossCX, bossCY + zoomedRadius * 0.1, zoomedRadius * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    // Rubber band coils on boss (highlight where arms grab)
+    ctx.strokeStyle = '#cc6600';
+    ctx.lineWidth = 5;
+    const grabY = bossCY - zoomedRadius * 0.35;
+    for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(bossCX - zoomedRadius * 0.4, grabY + i * 14);
+        ctx.lineTo(bossCX + zoomedRadius * 0.4, grabY + i * 14);
+        ctx.stroke();
+    }
+    // Mario's 1000-fold arms
+    const marioFootX = CANVAS_W / 2;
+    const marioFootY = CANVAS_H - 30;
+    const armOffset = state.armsGrabGripped ? 0 : state.armsGrabHandsPos * 28;
+    const handTargetX = bossCX + armOffset;
+    const handTargetY = bossCY + zoomedRadius * 0.5;
+    const isAligned = state.armsGrabHandsPos === 0;
+    const armPulse = 0.8 + 0.2 * Math.sin(tick * 0.015);
+    let armColor;
+    if (state.armsGrabGripped) {
+        // Gripped — stretch arms based on pull
+        armColor = `rgba(255,200,80,${armPulse})`;
+    }
+    else {
+        armColor = isAligned ? `rgba(100,255,120,${armPulse})` : '#cc2222';
+    }
+    // Pull stretch: when pulling, hands move up toward boss
+    const pullY = state.armsGrabGripped ? handTargetY - state.armsPullT * zoomedRadius * 0.3 : handTargetY;
+    ctx.strokeStyle = armColor;
+    ctx.lineWidth = 12;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(marioFootX - 25, marioFootY);
+    ctx.bezierCurveTo(marioFootX - 40, marioFootY - 120, handTargetX - 50, pullY + 80, handTargetX - 24, pullY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(marioFootX + 25, marioFootY);
+    ctx.bezierCurveTo(marioFootX + 40, marioFootY - 120, handTargetX + 50, pullY + 80, handTargetX + 24, pullY);
+    ctx.stroke();
+    // Fists
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(handTargetX - 24, pullY, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(handTargetX + 24, pullY, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    drawMarioSprite(ctx, marioFootX, marioFootY - 20);
+    ctx.restore();
+    // UI overlay
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff8800';
+    ctx.font = 'bold 32px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.strokeText('1000-FOLD ARMS!', CANVAS_W / 2, 44);
+    ctx.fillText('1000-FOLD ARMS!', CANVAS_W / 2, 44);
+    if (!state.armsGrabGripped) {
+        ctx.fillStyle = '#ffdd44';
+        ctx.font = '14px monospace';
+        ctx.lineWidth = 0;
+        ctx.fillText('← → Align over rubber bands at top, SPACE to grip', CANVAS_W / 2, 72);
+        // Position bar
+        const barCX = CANVAS_W / 2;
+        const barY = CANVAS_H - 90;
+        const barHalfW = 105;
+        ctx.fillStyle = '#222';
+        ctx.fillRect(barCX - barHalfW - 10, barY - 10, (barHalfW + 10) * 2, 22);
+        ctx.fillStyle = isAligned ? 'rgba(100,255,120,0.4)' : 'rgba(255,255,255,0.1)';
+        ctx.fillRect(barCX - 18, barY - 8, 36, 18);
+        ctx.strokeStyle = isAligned ? '#44ff88' : '#555';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barCX - 18, barY - 8, 36, 18);
+        const markerX = barCX + state.armsGrabHandsPos * 35;
+        ctx.fillStyle = isAligned ? '#44ff88' : '#ffdd44';
+        ctx.beginPath();
+        ctx.arc(markerX, barY + 1, 10, 0, Math.PI * 2);
+        ctx.fill();
+        for (let i = -3; i <= 3; i++) {
+            const tx = barCX + i * 35;
+            ctx.strokeStyle = '#555';
+            ctx.beginPath();
+            ctx.moveTo(tx, barY - 6);
+            ctx.lineTo(tx, barY + 8);
+            ctx.stroke();
+        }
+        if (isAligned) {
+            const blink = Math.floor(Date.now() / 350) % 2 === 0;
+            if (blink) {
+                ctx.fillStyle = '#44ff88';
+                ctx.font = 'bold 26px monospace';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 4;
+                ctx.strokeText('PRESS SPACE TO GRIP!', CANVAS_W / 2, CANVAS_H - 105);
+                ctx.fillText('PRESS SPACE TO GRIP!', CANVAS_W / 2, CANVAS_H - 105);
+            }
+        }
+        else {
+            ctx.fillStyle = '#aaa';
+            ctx.font = '15px monospace';
+            ctx.lineWidth = 0;
+            ctx.fillText('Align the arms to the CENTER', CANVAS_W / 2, CANVAS_H - 105);
+        }
+    }
+    else {
+        // Gripped — show pull meter
+        const inRange = state.marioFinalRing <= 1;
+        ctx.fillStyle = inRange ? '#ffdd44' : '#ff8866';
+        ctx.font = '14px monospace';
+        ctx.lineWidth = 0;
+        ctx.fillText(inRange ? 'Hold ↓ to pull, release to YANK!' : 'Ring too far — barely effective!', CANVAS_W / 2, 72);
+        // Pull power bar
+        const barX = CANVAS_W / 2 - 100;
+        const barY2 = CANVAS_H - 90;
+        const barW = 200;
+        const barH = 20;
+        ctx.fillStyle = '#222';
+        ctx.fillRect(barX - 5, barY2 - 5, barW + 10, barH + 10);
+        ctx.fillStyle = inRange ? '#ff4444' : '#aa6633';
+        ctx.fillRect(barX, barY2, barW * state.armsPullT, barH);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY2, barW, barH);
+        const dmgPreview = inRange ? 20 + Math.round(state.armsPullT * 20) : 1;
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(`Pull power: ${Math.round(state.armsPullT * 100)}%  →  ~${dmgPreview} DMG`, CANVAS_W / 2, CANVAS_H - 105);
+        if (state.armsPullHeld) {
+            const blink = Math.floor(Date.now() / 200) % 2 === 0;
+            if (blink) {
+                ctx.fillStyle = '#ff4444';
+                ctx.font = 'bold 18px monospace';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 3;
+                ctx.strokeText('PULLING...', CANVAS_W / 2, CANVAS_H - 125);
+                ctx.fillText('PULLING...', CANVAS_W / 2, CANVAS_H - 125);
+            }
+        }
+    }
+    ctx.restore();
+}
+export const PAUSE_BTN = { x: CANVAS_W - 52, y: 6, w: 46, h: 26 };
+function drawPauseButton(ctx, state, tick) {
+    const fightPhases = ['puzzle', 'mario_walk', 'attack_choice', 'mario_jump', 'mario_hammer',
+        'mario_mash', 'boss_attack', 'primary_target', 'pencil_cutscene', 'pencil_rain', 'snap_shut',
+        'boss_reload', 'pencil_grab', 'rainbow_smash', 'rainbow_roll_attack', 'pullback', 'bumper_bands',
+        'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback',
+        'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot'];
+    if (!fightPhases.includes(state.phase))
+        return;
+    const { x, y, w, h } = PAUSE_BTN;
+    ctx.save();
+    ctx.fillStyle = state.paused ? '#ff8800' : 'rgba(40,40,40,0.8)';
+    roundRect(ctx, x, y, w, h, 5);
+    ctx.fill();
+    ctx.strokeStyle = state.paused ? '#ffdd44' : '#666';
+    ctx.lineWidth = 1;
+    roundRect(ctx, x, y, w, h, 5);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(state.paused ? '▶ P' : '⏸ P', x + w / 2, y + h / 2);
+    ctx.restore();
+    void tick;
 }
 function drawRainbowSmash(ctx, state, tick) {
     ctx.save();
@@ -1940,7 +2301,7 @@ function drawRainbowRollAttack(ctx, state, tick) {
         }
         return;
     }
-    const slotAngle = ((8 + 0.5) / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
+    const slotAngle = ((state.marioFinalSlot + 0.5) / NUM_PANELS) * Math.PI * 2 - Math.PI / 2;
     const marioR = BOSS_RADIUS + 3.5 * RING_WIDTH;
     const marioX = RING_CX + marioR * Math.cos(slotAngle);
     const marioY = RING_CY + marioR * Math.sin(slotAngle);
@@ -1991,6 +2352,55 @@ function drawRainbowRollAttack(ctx, state, tick) {
     ctx.font = 'bold 15px monospace';
     ctx.lineWidth = 0;
     ctx.fillText(`${state.pencilRainCount} pencils × 4 dmg = ${dmgPreview} (${Math.ceil(dmgPreview / 2)} if blocked)`, CANVAS_W / 2, 82);
+    ctx.restore();
+}
+function drawEnvelopeOverlay(ctx, state) {
+    if (!state.envelopeMessage || state.envelopeTimer <= 0)
+        return;
+    const alpha = Math.min(1, state.envelopeTimer / 500); // fade out last 500ms
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // Envelope box - orange with dark border
+    const boxW = 580, boxH = 100;
+    const boxX = CANVAS_W / 2 - boxW / 2;
+    const boxY = CANVAS_H - 160;
+    ctx.fillStyle = '#aa4400';
+    roundRect(ctx, boxX - 2, boxY - 2, boxW + 4, boxH + 4, 10);
+    ctx.fill();
+    ctx.fillStyle = '#ff8800';
+    roundRect(ctx, boxX, boxY, boxW, boxH, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#ffcc44';
+    ctx.lineWidth = 2;
+    roundRect(ctx, boxX, boxY, boxW, boxH, 8);
+    ctx.stroke();
+    // Envelope icon
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('✉', boxX + 14, boxY + 34);
+    // Message text - wrap if needed
+    ctx.font = '14px monospace';
+    ctx.fillStyle = '#fff8e8';
+    ctx.textAlign = 'left';
+    // Simple word wrap
+    const words = state.envelopeMessage.split(' ');
+    let line = '';
+    let lineY = boxY + 28;
+    const maxW = boxW - 60;
+    for (const word of words) {
+        const test = line + (line ? ' ' : '') + word;
+        if (ctx.measureText(test).width > maxW && line) {
+            ctx.fillText(line, boxX + 44, lineY);
+            line = word;
+            lineY += 20;
+        }
+        else {
+            line = test;
+        }
+    }
+    if (line)
+        ctx.fillText(line, boxX + 44, lineY);
     ctx.restore();
 }
 function drawSavePrompt(ctx, state) {
@@ -2081,6 +2491,629 @@ export function drawTestingSelect(ctx, state) {
     ctx.fillText('ESC — back to title', CANVAS_W / 2, CANVAS_H - 40);
     void state;
 }
+function drawSnapbackPhase(ctx, state, tick) {
+    const t = state.snapbackT;
+    const marioTarget = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+    // Boss rushes from center toward Mario
+    const eased = t * t * (3 - 2 * t);
+    const bossX = RING_CX + (marioTarget.x - RING_CX) * eased * 0.7;
+    const bossY = RING_CY + (marioTarget.y - RING_CY) * eased * 0.7;
+    // Draw rubber band boss at rushing position
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#ff8800';
+    ctx.beginPath();
+    ctx.arc(bossX, bossY, 22 + 4 * Math.sin(tick * 0.04), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#cc6600';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // Wrap line (rubber band)
+    ctx.strokeStyle = '#ffaa33';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(RING_CX, RING_CY);
+    ctx.lineTo(bossX, bossY);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    // SNAPBACK label
+    const blink = Math.floor(Date.now() / 300) % 2 === 0;
+    if (blink) {
+        ctx.save();
+        ctx.font = 'bold 22px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ff6600';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 4;
+        ctx.strokeText('SNAPBACK!', RING_CX, RING_CY - BOSS_RADIUS - 20);
+        ctx.fillText('SNAPBACK!', RING_CX, RING_CY - BOSS_RADIUS - 20);
+        ctx.restore();
+    }
+    void tick;
+}
+function drawRubberBindPhase(ctx, state, tick) {
+    const bandIndex = state.rubberBindBandIndex;
+    const t = state.attackProjectileT;
+    const inDelay = state.rubberBindDelayTimer > 0;
+    const marioTarget = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+    // Flying rubber band (during travel phase)
+    if (!inDelay && t > 0 && t < 1) {
+        const eased = t * t * (3 - 2 * t);
+        const px = RING_CX + (marioTarget.x - RING_CX) * eased;
+        const py = RING_CY + (marioTarget.y - RING_CY) * eased;
+        drawRubberBandProjectile(ctx, px, py, tick * 0.07);
+    }
+    // 3 band progress indicators
+    for (let i = 0; i < 3; i++) {
+        const ix = marioTarget.x + (i - 1) * 22;
+        const iy = marioTarget.y - 30;
+        ctx.save();
+        if (i < bandIndex || (i === bandIndex && inDelay)) {
+            ctx.fillStyle = state.marioTied ? '#cc4400' : '#44ff88';
+            ctx.beginPath();
+            ctx.arc(ix, iy, 7, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        else if (i === bandIndex && !inDelay) {
+            ctx.strokeStyle = '#ffaa44';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(ix, iy, 7, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        else {
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(ix, iy, 7, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+    // TIED indicator near Mario
+    if (state.marioTied) {
+        ctx.save();
+        ctx.fillStyle = '#cc4400';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.font = 'bold 15px monospace';
+        ctx.textAlign = 'center';
+        ctx.strokeText('TIED!', marioTarget.x, marioTarget.y + 18);
+        ctx.fillText('TIED!', marioTarget.x, marioTarget.y + 18);
+        ctx.restore();
+    }
+    void tick;
+}
+function drawTrappedSnapback(ctx, state, tick) {
+    const TOTAL_MS = 3000;
+    const INTRO_MS = 1500;
+    const elapsed = TOTAL_MS - state.trappedSnapbackTimer;
+    const marioPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+    if (elapsed < INTRO_MS) {
+        // Tied up message
+        const blink = Math.floor(Date.now() / 300) % 2 === 0;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(0, 275, CANVAS_W, 130);
+        ctx.fillStyle = blink ? '#cc4400' : '#ff8844';
+        ctx.font = 'bold 26px monospace';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.strokeText("Tied up, can't move.", CANVAS_W / 2, 325);
+        ctx.fillText("Tied up, can't move.", CANVAS_W / 2, 325);
+        ctx.fillStyle = '#ffdd88';
+        ctx.font = '14px monospace';
+        ctx.fillText('Rubber Band winds up the snapback...', CANVAS_W / 2, 360);
+        ctx.restore();
+        // Draw rubber band lines around Mario
+        ctx.save();
+        ctx.strokeStyle = '#cc4400';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 4]);
+        const pulse = 0.8 + 0.2 * Math.sin(tick * 0.05);
+        ctx.globalAlpha = pulse;
+        ctx.beginPath();
+        ctx.arc(marioPos.x, marioPos.y, 14, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+    }
+    else {
+        // Approach: stretch rubber band line from boss to Mario
+        const approachT = (elapsed - INTRO_MS) / (TOTAL_MS - INTRO_MS);
+        const eased = approachT * approachT;
+        // Draw stretching rubber band
+        ctx.save();
+        ctx.strokeStyle = '#cc4400';
+        ctx.lineWidth = Math.max(2, 6 * (1 - approachT));
+        ctx.setLineDash([8, 4]);
+        const lineStartX = RING_CX + (marioPos.x - RING_CX) * eased * 0.6;
+        const lineStartY = RING_CY + (marioPos.y - RING_CY) * eased * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(lineStartX, lineStartY);
+        ctx.lineTo(marioPos.x, marioPos.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+        // Show attack text
+        const blink2 = Math.floor(Date.now() / 180) % 2 === 0;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(100, 288, CANVAS_W - 200, 80);
+        ctx.fillStyle = blink2 ? '#ff3300' : '#ff8844';
+        ctx.font = 'bold 24px monospace';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.strokeText('TRAPPED SNAPBACK!', CANVAS_W / 2, 330);
+        ctx.fillText('TRAPPED SNAPBACK!', CANVAS_W / 2, 330);
+        const dmgLabels = ['20-25', '16-21', '14-19', '12-17'];
+        ctx.fillStyle = '#ffdd88';
+        ctx.font = '13px monospace';
+        ctx.fillText(`Ring ${state.marioFinalRing + 1}: ${dmgLabels[state.marioFinalRing]} incoming!`, CANVAS_W / 2, 357);
+        ctx.restore();
+    }
+    void tick;
+}
+function drawBumperBands(ctx, state) {
+    // progress 0=start, 1=done (pullbackTimer counts down from 2500)
+    const totalDur = 2500;
+    const progress = 1 - state.pullbackTimer / totalDur;
+    // Draw each rubber band flying from boss center to its target panel position
+    const bands = state.rubberBands;
+    if (bands.length === 0)
+        return;
+    for (let i = 0; i < bands.length; i++) {
+        // Stagger: band i starts at i/bands.length * 0.5 into the animation
+        const staggerStart = (i / bands.length) * 0.5;
+        const localT = Math.max(0, Math.min(1, (progress - staggerStart) / 0.6));
+        if (localT <= 0)
+            continue;
+        const target = panelCenter(bands[i].ring, bands[i].slot);
+        // Ease out cubic
+        const eased = 1 - Math.pow(1 - localT, 3);
+        const x = RING_CX + (target.x - RING_CX) * eased;
+        const y = RING_CY + (target.y - RING_CY) * eased;
+        // Draw a rubber band circle (orange ring)
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, 8, 0, Math.PI * 2);
+        ctx.strokeStyle = '#cc4400';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 1.5);
+        ctx.strokeStyle = '#ff8844';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+    }
+    // Text overlay
+    const blink = Math.floor(Date.now() / 300) % 2 === 0;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(150, 290, CANVAS_W - 300, 100);
+    ctx.fillStyle = blink ? '#ff6600' : '#ffaa44';
+    ctx.font = 'bold 28px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('BUMPER BANDS!', CANVAS_W / 2, 335);
+    ctx.fillStyle = '#ffdd88';
+    ctx.font = '13px monospace';
+    ctx.fillText('Rubber Band is launching bands onto the rings!', CANVAS_W / 2, 360);
+    ctx.fillText(`${state.rubberBandCount} bands active — use 1000-Fold Arms!`, CANVAS_W / 2, 378);
+    ctx.restore();
+}
+function drawSoloPhase(ctx, state, tick) {
+    const phase = state.phase;
+    // Full dark background
+    ctx.fillStyle = '#050510';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    const bCX = CANVAS_W / 2;
+    const bCY = CANVAS_H / 2 - 40;
+    // Draw the solo rubber band (large) at center
+    if (phase === 'solo_slingshot' && state.soloSlingshotLaunched) {
+        // Launch animation — band flies off toward upper-right
+        const t = state.soloSlingshotT;
+        const eased = t * t;
+        const launchX = bCX + eased * 800;
+        const launchY = bCY - eased * 600;
+        const scale = 1 - t * 0.7;
+        ctx.save();
+        ctx.translate(launchX, launchY);
+        ctx.scale(scale, scale);
+        drawBoss1Solo(ctx, 0, 0, 90, tick);
+        ctx.restore();
+        // Speed lines
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,150,50,0.6)';
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 6; i++) {
+            const sx = bCX + (Math.random() - 0.5) * 200;
+            const sy = bCY + (Math.random() - 0.5) * 150;
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(launchX, launchY);
+            ctx.stroke();
+        }
+        ctx.restore();
+        // "LAUNCHED!" text
+        const alpha = 1 - t;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#ffdd00';
+        ctx.font = 'bold 48px monospace';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 6;
+        ctx.strokeText('LAUNCHED!', bCX, bCY - 130);
+        ctx.fillText('LAUNCHED!', bCX, bCY - 130);
+        ctx.restore();
+    }
+    else if (phase === 'solo_grab_attempt') {
+        // Band oscillates or stays at pause position
+        const bandOffsetX = state.soloGrabBandPos * 35;
+        drawBoss1Solo(ctx, bCX + bandOffsetX, bCY, 90, tick);
+        // Pause direction arrow
+        if (state.soloGrabSubPhase === 'paused_left' || state.soloGrabSubPhase === 'paused_right') {
+            const blink = Math.floor(Date.now() / 250) % 2 === 0;
+            if (blink) {
+                ctx.save();
+                ctx.fillStyle = '#44ff88';
+                ctx.font = 'bold 38px monospace';
+                ctx.textAlign = 'center';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 5;
+                const arrow = state.soloGrabSubPhase === 'paused_left' ? '← GRIP!' : 'GRIP! →';
+                ctx.strokeText(arrow, bCX + bandOffsetX, bCY - 120);
+                ctx.fillText(arrow, bCX + bandOffsetX, bCY - 120);
+                ctx.restore();
+            }
+        }
+    }
+    else if (phase === 'solo_snapback_attack') {
+        const t = state.soloSnapbackAttackT;
+        const marioSlotAngle = ((state.marioFinalSlot + 0.5) / 12) * Math.PI * 2 - Math.PI / 2;
+        const marioR = BOSS_RADIUS + 3.5 * RING_WIDTH;
+        const marioX = RING_CX + marioR * Math.cos(marioSlotAngle);
+        const marioY = RING_CY + marioR * Math.sin(marioSlotAngle);
+        const eased = t * t * (3 - 2 * t);
+        const attackBX = bCX + (marioX - bCX) * eased * 0.8;
+        const attackBY = bCY + (marioY - bCY) * eased * 0.8;
+        // Speed trail
+        ctx.save();
+        for (let i = 3; i >= 1; i--) {
+            const trailT = Math.max(0, eased - i * 0.07);
+            const tx = bCX + (marioX - bCX) * trailT * 0.8;
+            const ty = bCY + (marioY - bCY) * trailT * 0.8;
+            ctx.globalAlpha = 0.2 / i;
+            drawBoss1Solo(ctx, tx, ty, 80 - i * 8, tick);
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
+        drawBoss1Solo(ctx, attackBX, attackBY, 90, tick);
+        // Mario token at final position
+        const mFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
+        const mOff_x = mFinalPos.x - RING_CX + bCX;
+        const mOff_y = mFinalPos.y - RING_CY + bCY;
+        drawMarioSprite(ctx, mOff_x, mOff_y);
+    }
+    else if (phase === 'solo_slingshot') {
+        // Band stretching back
+        const pull = state.soloPullT;
+        const stretchX = bCX - pull * 80;
+        const stretchY = bCY + pull * 40;
+        drawBoss1Solo(ctx, stretchX, stretchY, 90 * (1 + pull * 0.3), tick);
+        // Slingshot lines
+        if (pull > 0.05) {
+            ctx.save();
+            ctx.strokeStyle = `rgba(255,180,50,${0.4 + pull * 0.5})`;
+            ctx.lineWidth = 3;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.moveTo(bCX, bCY - 150);
+            ctx.lineTo(stretchX, stretchY);
+            ctx.moveTo(bCX, bCY + 150);
+            ctx.lineTo(stretchX, stretchY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+        // Pull power bar
+        const barX = CANVAS_W / 2 - 140;
+        const barY = CANVAS_H - 100;
+        const barW = 280;
+        const barH = 22;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX - 4, barY - 4, barW + 8, barH + 8);
+        ctx.fillStyle = pull > 0.8 ? '#ffdd00' : '#ff8800';
+        ctx.fillRect(barX, barY, barW * pull, barH);
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barW, barH);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 13px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`PULL: ${Math.round(pull * 100)}%`, CANVAS_W / 2, barY - 8);
+        if (!state.soloPullHeld && pull < 0.1) {
+            const blink = Math.floor(Date.now() / 400) % 2 === 0;
+            if (blink) {
+                ctx.fillStyle = '#ffdd44';
+                ctx.font = 'bold 26px monospace';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 4;
+                ctx.strokeText('Hold ↓ to charge slingshot!', CANVAS_W / 2, CANVAS_H - 118);
+                ctx.fillText('Hold ↓ to charge slingshot!', CANVAS_W / 2, CANVAS_H - 118);
+            }
+        }
+        else if (state.soloPullHeld) {
+            ctx.fillStyle = '#ffaa44';
+            ctx.font = 'bold 22px monospace';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.strokeText('Release ↓ to LAUNCH!', CANVAS_W / 2, CANVAS_H - 118);
+            ctx.fillText('Release ↓ to LAUNCH!', CANVAS_W / 2, CANVAS_H - 118);
+        }
+    }
+    else {
+        // solo_snapback_charge and solo_slam: draw band at center
+        if (phase === 'solo_slam') {
+            // Shake boss based on slam count
+            const shakeX = state.soloSlamCount > 0 ? (Math.random() - 0.5) * 6 : 0;
+            const shakeY = state.soloSlamCount > 0 ? (Math.random() - 0.5) * 6 : 0;
+            drawBoss1Solo(ctx, bCX + shakeX, bCY + shakeY, 90, tick);
+        }
+        else {
+            drawBoss1Solo(ctx, bCX, bCY, 90, tick);
+        }
+    }
+    // Attack name header
+    ctx.save();
+    ctx.textAlign = 'center';
+    const phaseTitle = {
+        solo_snapback_charge: 'SOLO SNAPBACK',
+        solo_grab_attempt: 'GRAB THE BAND!',
+        solo_snapback_attack: 'SOLO SNAPBACK!',
+        solo_slam: 'SOLO SLAM!',
+        solo_slingshot: 'SLINGSHOT!',
+    };
+    const titleColor = {
+        solo_snapback_charge: '#ff6600',
+        solo_grab_attempt: '#44ff88',
+        solo_snapback_attack: '#ff2200',
+        solo_slam: '#ff8800',
+        solo_slingshot: '#ffdd00',
+    };
+    ctx.fillStyle = titleColor[phase] ?? '#ffffff';
+    ctx.font = 'bold 36px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 6;
+    ctx.strokeText(phaseTitle[phase] ?? '', CANVAS_W / 2, 50);
+    ctx.fillText(phaseTitle[phase] ?? '', CANVAS_W / 2, 50);
+    // Phase-specific overlays
+    if (phase === 'solo_snapback_charge') {
+        const frac = state.soloSnapbackChargeTimer / 3000;
+        const blink = Math.floor(Date.now() / 200) % 2 === 0;
+        const pulse = 0.6 + 0.4 * Math.sin(tick * 0.015);
+        // Charge bar
+        const barX = CANVAS_W / 2 - 160;
+        const barY = CANVAS_H - 100;
+        ctx.fillStyle = '#222';
+        ctx.fillRect(barX - 4, barY - 4, 328, 28);
+        const barColor = frac > 0.5 ? '#ff6600' : frac > 0.25 ? '#ff4400' : '#ff2200';
+        ctx.fillStyle = barColor;
+        ctx.fillRect(barX, barY, 320 * frac, 20);
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, 320, 20);
+        if (blink) {
+            ctx.globalAlpha = pulse;
+            ctx.fillStyle = '#ff4400';
+            ctx.font = 'bold 22px monospace';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.strokeText('GET READY TO GRAB!', CANVAS_W / 2, bCY + 140);
+            ctx.fillText('GET READY TO GRAB!', CANVAS_W / 2, bCY + 140);
+            ctx.globalAlpha = 1;
+        }
+        ctx.fillStyle = '#ffdd88';
+        ctx.font = '13px monospace';
+        ctx.lineWidth = 0;
+        ctx.fillText(`Attempt ${state.soloGrabAttempt + 1} of 2`, CANVAS_W / 2, bCY + 170);
+    }
+    if (phase === 'solo_grab_attempt') {
+        // Attempt counter
+        ctx.fillStyle = '#ffdd88';
+        ctx.font = 'bold 14px monospace';
+        ctx.lineWidth = 0;
+        ctx.fillText(`Attempt ${state.soloGrabAttempt + 1} / 2`, CANVAS_W / 2, bCY + 145);
+        // Oscillation indicator (only during moving)
+        if (state.soloGrabSubPhase === 'moving') {
+            const progress = state.soloGrabTimer / 3000;
+            const barX = CANVAS_W / 2 - 120;
+            const barY = CANVAS_H - 80;
+            ctx.fillStyle = '#333';
+            ctx.fillRect(barX, barY, 240, 16);
+            ctx.fillStyle = '#66aaff';
+            ctx.fillRect(barX, barY, 240 * progress, 16);
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(barX, barY, 240, 16);
+            ctx.fillStyle = '#aaa';
+            ctx.font = '11px monospace';
+            ctx.lineWidth = 0;
+            ctx.fillText('Oscillating...', CANVAS_W / 2, barY - 6);
+        }
+        else {
+            // Pause window timer
+            const winFrac = state.soloGrabPauseTimer / 1000;
+            const barX = CANVAS_W / 2 - 120;
+            const barY = CANVAS_H - 80;
+            ctx.fillStyle = '#333';
+            ctx.fillRect(barX, barY, 240, 16);
+            ctx.fillStyle = winFrac > 0.4 ? '#44ff88' : '#ffaa00';
+            ctx.fillRect(barX, barY, 240 * winFrac, 16);
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(barX, barY, 240, 16);
+            ctx.fillStyle = '#ffdd44';
+            ctx.font = 'bold 12px monospace';
+            ctx.lineWidth = 0;
+            ctx.fillText('GRIP WINDOW!', CANVAS_W / 2, barY - 6);
+        }
+    }
+    if (phase === 'solo_slam') {
+        const frac = state.soloSlamTimer / 5000;
+        // Countdown bar
+        const barX = CANVAS_W / 2 - 150;
+        const barY = CANVAS_H - 90;
+        ctx.fillStyle = '#222';
+        ctx.fillRect(barX - 4, barY - 4, 308, 24);
+        const barColor2 = frac > 0.5 ? '#44cc22' : frac > 0.25 ? '#ddaa00' : '#cc2222';
+        ctx.fillStyle = barColor2;
+        ctx.fillRect(barX, barY, 300 * frac, 16);
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, 300, 16);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 13px monospace';
+        ctx.lineWidth = 0;
+        ctx.fillText(`${(state.soloSlamTimer / 1000).toFixed(1)}s  |  Slams: ${state.soloSlamCount}`, CANVAS_W / 2, barY - 8);
+        if (state.soloSlamCooldown <= 0) {
+            const blink = Math.floor(Date.now() / 200) % 2 === 0;
+            if (blink) {
+                ctx.fillStyle = '#ffdd00';
+                ctx.font = 'bold 30px monospace';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 4;
+                ctx.strokeText('MASH SPACE!!!', CANVAS_W / 2, bCY + 150);
+                ctx.fillText('MASH SPACE!!!', CANVAS_W / 2, bCY + 150);
+            }
+        }
+        else {
+            ctx.fillStyle = '#ff8800';
+            ctx.font = 'bold 18px monospace';
+            ctx.lineWidth = 0;
+            ctx.fillText('COOLDOWN...', CANVAS_W / 2, bCY + 150);
+        }
+    }
+    if (phase === 'solo_snapback_attack') {
+        // Block timing bar
+        const BLOCK_START = 0.35;
+        const BLOCK_END = 0.72;
+        const barX = 200, barY = 640, barW = 500, barH = 20;
+        ctx.fillStyle = '#333333';
+        roundRect(ctx, barX, barY, barW, barH, 5);
+        ctx.fill();
+        ctx.fillStyle = '#666';
+        ctx.fillRect(barX + 1, barY + 1, (barW - 2) * state.soloSnapbackAttackT, barH - 2);
+        const winStart = barX + barW * BLOCK_START;
+        const winEnd = barX + barW * BLOCK_END;
+        const pulse2 = 0.6 + 0.4 * Math.sin(tick * 0.01);
+        ctx.fillStyle = `rgba(0,255,100,${pulse2})`;
+        ctx.fillRect(winStart, barY + 1, winEnd - winStart, barH - 2);
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barW, barH);
+        if (state.blockWindowOpen && !state.playerBlocked) {
+            const flash = 0.5 + 0.5 * Math.sin(tick * 0.025);
+            ctx.globalAlpha = flash;
+            ctx.fillStyle = '#00ff88';
+            ctx.font = 'bold 28px monospace';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.strokeText('PRESS SPACE TO BLOCK!', CANVAS_W / 2, 600);
+            ctx.fillText('PRESS SPACE TO BLOCK!', CANVAS_W / 2, 600);
+            ctx.globalAlpha = 1;
+        }
+        if (state.playerBlocked) {
+            ctx.fillStyle = '#44ffaa';
+            ctx.font = 'bold 32px monospace';
+            ctx.lineWidth = 0;
+            ctx.fillText('BLOCKED!', CANVAS_W / 2, 590);
+        }
+        // Damage preview
+        const dmgRanges = ['56-61', '53-58', '50-55', '45-50'];
+        ctx.fillStyle = '#ff8800';
+        ctx.font = '14px monospace';
+        ctx.lineWidth = 0;
+        ctx.fillText(`Ring ${state.marioFinalRing + 1}: ${dmgRanges[state.marioFinalRing]} damage (half if blocked)`, CANVAS_W / 2, 80);
+    }
+    ctx.restore();
+    // Bottom hint
+    const hint = getPhaseHint(state);
+    if (hint) {
+        ctx.save();
+        ctx.fillStyle = '#0a0a18';
+        ctx.fillRect(0, 620, CANVAS_W, 60);
+        ctx.fillStyle = '#88aacc';
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(hint, CANVAS_W / 2, 655);
+        ctx.restore();
+    }
+    void tick;
+}
+function drawPullback(ctx, state, tick) {
+    const totalDur = 1200;
+    // progress 0=start, 1=done
+    const progress = 1 - state.pullbackTimer / totalDur;
+    // Animate each rubber band flying from its panel back to the boss center
+    const bands = state.rubberBands;
+    for (let i = 0; i < bands.length; i++) {
+        const staggerStart = (i / Math.max(bands.length, 1)) * 0.4;
+        const localT = Math.max(0, Math.min(1, (progress - staggerStart) / 0.65));
+        if (localT <= 0)
+            continue;
+        const eased = 1 - Math.pow(1 - localT, 3);
+        const src = panelCenter(bands[i].ring, bands[i].slot);
+        const x = src.x + (RING_CX - src.x) * eased;
+        const y = src.y + (RING_CY - src.y) * eased;
+        drawRubberBandProjectile(ctx, x, y, tick * 0.04 + i);
+    }
+    // HP restored indicator: show heart with blue number (appears after progress > 0.5)
+    if (progress > 0.5) {
+        const healedHp = state.rubberBandCount * state.rubberBandHpPerBand;
+        const heartAlpha = Math.min(1, (progress - 0.5) * 4);
+        ctx.save();
+        ctx.globalAlpha = heartAlpha;
+        // Heart shape at boss center
+        const hx = RING_CX;
+        const hy = RING_CY - BOSS_RADIUS - 30;
+        ctx.fillStyle = '#ff4466';
+        ctx.beginPath();
+        ctx.moveTo(hx, hy + 8);
+        ctx.bezierCurveTo(hx, hy, hx - 16, hy, hx - 16, hy + 8);
+        ctx.bezierCurveTo(hx - 16, hy + 20, hx, hy + 28, hx, hy + 36);
+        ctx.bezierCurveTo(hx, hy + 28, hx + 16, hy + 20, hx + 16, hy + 8);
+        ctx.bezierCurveTo(hx + 16, hy, hx, hy, hx, hy + 8);
+        ctx.fill();
+        ctx.strokeStyle = '#880022';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // HP number in blue inside heart
+        ctx.fillStyle = '#44aaff';
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`+${healedHp}`, hx, hy + 24);
+        ctx.restore();
+    }
+    // Text overlay
+    const blink = Math.floor(Date.now() / 250) % 2 === 0;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(160, 295, CANVAS_W - 320, 90);
+    ctx.fillStyle = blink ? '#ff8800' : '#ffaa44';
+    ctx.font = 'bold 30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('PULLBACK!', CANVAS_W / 2, 345);
+    ctx.fillStyle = '#ffdd88';
+    ctx.font = '14px monospace';
+    ctx.fillText('Rubber bands return...', CANVAS_W / 2, 372);
+    ctx.restore();
+    void tick;
+}
 // Main render function
 export function render(ctx, state, tick) {
     ctx.fillStyle = '#111122';
@@ -2115,8 +3148,44 @@ export function render(ctx, state, tick) {
             drawPencilGrab(ctx, state, tick);
             drawDamageNumbers(ctx, state.damageNumbers);
             return;
+        case 'arms_grab':
+            drawArmsGrab(ctx, state, tick);
+            drawDamageNumbers(ctx, state.damageNumbers);
+            return;
+        case 'solo_snapback_charge':
+        case 'solo_grab_attempt':
+        case 'solo_snapback_attack':
+        case 'solo_slam':
+        case 'solo_slingshot':
+            drawSoloPhase(ctx, state, tick);
+            drawDamageNumbers(ctx, state.damageNumbers);
+            drawPauseButton(ctx, state, tick);
+            if (state.paused) {
+                ctx.save();
+                ctx.fillStyle = 'rgba(0,0,0,0.72)';
+                ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 48px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 6;
+                ctx.strokeText('PAUSED', CANVAS_W / 2, CANVAS_H / 2 - 20);
+                ctx.fillText('PAUSED', CANVAS_W / 2, CANVAS_H / 2 - 20);
+                ctx.font = '18px monospace';
+                ctx.fillStyle = '#aaaaaa';
+                ctx.lineWidth = 0;
+                ctx.fillText('Press P to resume', CANVAS_W / 2, CANVAS_H / 2 + 30);
+                ctx.restore();
+            }
+            return;
         case 'rainbow_smash':
         case 'rainbow_roll_attack':
+        case 'pullback':
+        case 'bumper_bands':
+        case 'rubber_bind':
+        case 'snapback':
+        case 'trapped_snapback':
             // Fall through to main game view, then overlay
             break;
     }
@@ -2150,7 +3219,7 @@ export function render(ctx, state, tick) {
         const marioFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
         drawMarioSprite(ctx, marioFinalPos.x, marioFinalPos.y);
     }
-    else if (state.phase === 'rainbow_smash' || state.phase === 'rainbow_roll_attack') {
+    else if (state.phase === 'rainbow_smash' || state.phase === 'rainbow_roll_attack' || state.phase === 'pullback' || state.phase === 'bumper_bands' || state.phase === 'boss_attack' || state.phase === 'attack_choice' || state.phase === 'rubber_bind' || state.phase === 'snapback' || state.phase === 'trapped_snapback') {
         const marioFinalPos = panelCenter(state.marioFinalRing, state.marioFinalSlot);
         drawMarioSprite(ctx, marioFinalPos.x, marioFinalPos.y);
     }
@@ -2189,6 +3258,7 @@ export function render(ctx, state, tick) {
         ctx.restore();
     }
     drawDamageNumbers(ctx, state.damageNumbers);
+    drawEnvelopeOverlay(ctx, state);
     drawFlashEffects(ctx, state.flashEffects);
     if (state.phase === 'mario_jump') {
         drawJumpAnimation(ctx, state);
@@ -2228,4 +3298,44 @@ export function render(ctx, state, tick) {
     }
     // Always show current attack/action name in bottom-right corner
     drawAttackNameCorner(ctx, state, tick);
+    if (state.phase === 'pullback') {
+        drawPullback(ctx, state, tick);
+    }
+    if (state.phase === 'bumper_bands') {
+        drawBumperBands(ctx, state);
+    }
+    if (state.phase === 'rubber_bind') {
+        drawRubberBindPhase(ctx, state, tick);
+    }
+    if (state.phase === 'rubber_bind') {
+        drawBlockUI(ctx, state, tick);
+    }
+    if (state.phase === 'snapback') {
+        drawSnapbackPhase(ctx, state, tick);
+        drawBlockUI(ctx, state, tick);
+    }
+    if (state.phase === 'trapped_snapback') {
+        drawTrappedSnapback(ctx, state, tick);
+    }
+    // Pause button (always shown during fight phases)
+    drawPauseButton(ctx, state, tick);
+    // Pause overlay
+    if (state.paused) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 48px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 6;
+        ctx.strokeText('PAUSED', CANVAS_W / 2, CANVAS_H / 2 - 20);
+        ctx.fillText('PAUSED', CANVAS_W / 2, CANVAS_H / 2 - 20);
+        ctx.font = '18px monospace';
+        ctx.fillStyle = '#aaaaaa';
+        ctx.lineWidth = 0;
+        ctx.fillText('Press P to resume', CANVAS_W / 2, CANVAS_H / 2 + 30);
+        ctx.restore();
+    }
 }
