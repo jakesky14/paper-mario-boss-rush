@@ -512,7 +512,7 @@ export class Game {
     if (phase === 'how_to_play') {
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault();
-        this.state.howToPlayPage = Math.min(2, this.state.howToPlayPage + 1);
+        this.state.howToPlayPage = Math.min(1, this.state.howToPlayPage + 1);
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         e.preventDefault();
         this.state.howToPlayPage = Math.max(0, this.state.howToPlayPage - 1);

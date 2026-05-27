@@ -1773,7 +1773,7 @@ export function drawHowToPlay(ctx: CanvasRenderingContext2D, state: GameState): 
   for (let y = 0; y < CANVAS_H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_W, y); ctx.stroke(); }
 
   const page = state.howToPlayPage;
-  const PAGES = 3;
+  const PAGES = 2;
 
   // Header
   ctx.textAlign = 'center';
@@ -1814,8 +1814,8 @@ export function drawHowToPlay(ctx: CanvasRenderingContext2D, state: GameState): 
       ['← / →',         'Rotate selected ring CW/CCW'],
       ['Z',             'Switch to column slide mode'],
       ['↑ / ↓  (col)',  'Slide column inward/outward'],
-      ['X / Enter',     'Confirm / switch mode'],
-      ['SPACE',         'End puzzle & walk'],
+      ['X',             'Undo ring selection'],
+      ['SHIFT',         'End puzzle & walk'],
     ];
     ctx.font = '15px monospace';
     puzzleControls.forEach(([key, desc], i) => {
@@ -1941,74 +1941,11 @@ export function drawHowToPlay(ctx: CanvasRenderingContext2D, state: GameState): 
     });
   }
 
-  // ── PAGE 2: MOVEMENT & BOSS ATTACKS ─────────────────────────────────────
-  if (page === 2) {
-    const col1 = 60, col2 = 490;
-
-    // Movement
-    ctx.fillStyle = '#ffdd44';
-    ctx.font = 'bold 18px monospace';
-    ctx.fillText('MOVEMENT', col1, 105);
-    ctx.fillStyle = '#334455';
-    ctx.fillRect(col1, 110, 380, 2);
-
-    const movement = [
-      'Mario starts at slot 6 on the outermost ring.',
-      'He follows arrow panels automatically.',
-      'On empty panels, he keeps going in his last direction.',
-      'He stops on ACTION, MAGIC CIRCLE (if active), or',
-      'when he reaches the innermost ring with no path.',
-      'Align arrows to guide him to the panel you want!',
-      '',
-      'You have 3 moves per turn. Each move lets you:',
-      '  • Rotate a ring freely (left/right)',
-      '  • Or slide a column freely (in/out)',
-      'Switching target costs 1 move. Moves within the',
-      'same ring/column are free after the first press.',
-    ];
-    ctx.font = '14px monospace';
-    movement.forEach((line, i) => {
-      ctx.fillStyle = line.startsWith('  •') ? '#88ddff' : (line === '' ? '#000' : '#cccccc');
-      ctx.fillText(line, col1, 136 + i * 26);
-    });
-
-    // Boss Attacks
-    ctx.fillStyle = '#ffdd44';
-    ctx.font = 'bold 18px monospace';
-    ctx.fillText('BOSS ATTACKS', col2, 105);
-    ctx.fillStyle = '#334455';
-    ctx.fillRect(col2, 110, 360, 2);
-
-    const attacks: Array<[string, string]> = [
-      ['PRIMARY TARGET', 'Boss 0: Marked panels deal 3 dmg when stepped on'],
-      ['PENCIL RAIN',    'Boss 0: Pencils fly in — press SPACE to block each'],
-      ['RAINBOW ROLL',   'Boss 0: Charged attack after HP drops below half'],
-      ['BUMPER BANDS',   'Boss 1: Rubber bands placed on arrow panels'],
-      ['RUBBER BIND',    'Boss 1: Boss fires 3 bands — SPACE to block each'],
-      ['SNAPBACK',       'Boss 1: Boss rushes Mario — SPACE to block'],
-      ['1000-FOLD ARMS', 'Magic circle reached: grip (←/→) then pull (↓ hold)'],
-      ['SOLO SNAPBACK',  'Boss 1 final: grab the band (SPACE at pause), slam,'],
-      ['',               '  then slingshot (hold ↓, release to launch)'],
-    ];
-    ctx.font = '14px monospace';
-    attacks.forEach(([name, desc], i) => {
-      const y = 136 + i * 52;
-      if (name) {
-        ctx.fillStyle = '#ff8888';
-        ctx.font = 'bold 13px monospace';
-        ctx.fillText(name, col2, y);
-        ctx.font = '13px monospace';
-      }
-      ctx.fillStyle = '#cccccc';
-      ctx.fillText(desc, col2, y + (name ? 18 : 0));
-    });
-  }
-
   // Footer
   ctx.textAlign = 'center';
   ctx.fillStyle = '#556677';
   ctx.font = '14px monospace';
-  const nav = page === 0 ? '→ Next page' : page === 2 ? '← Prev page' : '← Prev     Next →';
+  const nav = page === 0 ? '→ Next page' : '← Prev page';
   ctx.fillText(`${nav}     |     ESC / ENTER — back to menu`, CANVAS_W / 2, CANVAS_H - 18);
 }
 
