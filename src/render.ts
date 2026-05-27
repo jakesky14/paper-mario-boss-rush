@@ -3376,43 +3376,64 @@ function drawSoloPhase(ctx: CanvasRenderingContext2D, state: GameState, tick: nu
     const bandOffsetX = state.soloGrabBandPos * 35;
     drawBoss1Solo(ctx, bCX + bandOffsetX, bCY, 90, tick);
 
-    // Player hands cursor
+    // Player 1000-fold arms cursor
     const cursorOffsetX = state.soloGrabHandsCursor * 35;
+    const handX = bCX + cursorOffsetX;
+    const handY = bCY + 60; // just below the band
+    const footX = bCX;
+    const footY = CANVAS_H - 20;
     const paused = state.soloGrabSubPhase === 'paused_left' || state.soloGrabSubPhase === 'paused_right';
     const targetPos = state.soloGrabSubPhase === 'paused_left' ? -3 : 3;
     const aligned = paused && Math.abs(state.soloGrabHandsCursor - targetPos) <= 1;
+    const armPulse = 0.85 + 0.15 * Math.sin(tick * 0.015);
+    const armColor = aligned ? `rgba(100,255,120,${armPulse})` : '#cc2222';
+
     ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    // Draw hands cursor (pair of hands symbol)
-    ctx.font = 'bold 36px monospace';
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
-    const cursorColor = aligned ? '#44ff88' : '#ffdd44';
-    ctx.fillStyle = cursorColor;
-    ctx.strokeText('👐', bCX + cursorOffsetX, bCY - 120);
-    ctx.fillText('👐', bCX + cursorOffsetX, bCY - 120);
-    // Label
-    ctx.font = 'bold 14px monospace';
-    ctx.lineWidth = 2;
-    ctx.strokeText('HANDS', bCX + cursorOffsetX, bCY - 95);
-    ctx.fillText('HANDS', bCX + cursorOffsetX, bCY - 95);
+    // Left arm
+    ctx.strokeStyle = armColor;
+    ctx.lineWidth = 12;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(footX - 25, footY);
+    ctx.bezierCurveTo(footX - 40, footY - 120, handX - 50, handY + 80, handX - 20, handY);
+    ctx.stroke();
+    // Right arm
+    ctx.beginPath();
+    ctx.moveTo(footX + 25, footY);
+    ctx.bezierCurveTo(footX + 40, footY - 120, handX + 50, handY + 80, handX + 20, handY);
+    ctx.stroke();
+    // Left glove
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(handX - 20, handY, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 2;
+    ctx.stroke();
+    // Right glove
+    ctx.beginPath();
+    ctx.arc(handX + 20, handY, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Aligned / grip prompt
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     if (paused) {
       if (aligned) {
         const blink = Math.floor(Date.now() / 250) % 2 === 0;
         if (blink) {
           ctx.fillStyle = '#44ff88';
-          ctx.font = 'bold 18px monospace';
-          ctx.lineWidth = 3;
-          ctx.strokeText('PRESS SPACE!', bCX + cursorOffsetX, bCY - 148);
-          ctx.fillText('PRESS SPACE!', bCX + cursorOffsetX, bCY - 148);
+          ctx.font = 'bold 20px monospace';
+          ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+          ctx.strokeText('PRESS SPACE!', handX, handY - 40);
+          ctx.fillText('PRESS SPACE!', handX, handY - 40);
         }
       } else {
         ctx.fillStyle = '#ffdd44';
         ctx.font = 'bold 14px monospace';
-        ctx.lineWidth = 2;
-        const arrow = state.soloGrabSubPhase === 'paused_left' ? '← align left!' : '→ align right!';
-        ctx.strokeText(arrow, bCX + bandOffsetX, bCY - 148);
-        ctx.fillText(arrow, bCX + bandOffsetX, bCY - 148);
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+        const arrow = state.soloGrabSubPhase === 'paused_left' ? '← move left!' : '→ move right!';
+        ctx.strokeText(arrow, bandOffsetX + bCX, bCY - 148);
+        ctx.fillText(arrow, bandOffsetX + bCX, bCY - 148);
       }
     }
     ctx.restore();
