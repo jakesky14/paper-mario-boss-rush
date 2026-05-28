@@ -40,7 +40,10 @@ export type Phase =
   | 'victory'
   | 'game_over'
   | 'enemy_turn_announce'
-  | 'hole_punch_attack';
+  | 'hole_punch_attack'
+  | 'main_squeeze'
+  | 'gettin_down'
+  | 'hole_punch_inner';
 
 export interface AccessoryInventory {
   heartPlus: boolean;
@@ -279,8 +282,20 @@ export interface GameState {
   // Solo grab cursor
   soloGrabHandsCursor: number;        // -3..3, player moves with ←/→ to align with band
 
-  // Hole Punch attack
+  // Rubber Band (boss 1) envelope tracking
+  rubberBandArmsUsed: boolean;        // true after 1000-fold arms deals damage first time
+  rubberBandSoloWarned: boolean;      // true once solo mode begins (for envelope msg)
+  rubberBandNormalAttackUsed: boolean; // true after mario reached action but not magic circle (boss 1)
+
+  // Hole Punch (boss 2) mechanics
   holePunchAttackTimer: number;       // ms display timer for hole_punch_attack phase
+  holePunchAnimPhase: number;         // 0=pre-punch, 1=punching, 2=shuffling, 3=done
+  holePunchShuffleCount: number;      // how many shuffles done
+  holePunchPunchCount: number;        // number of punches acquired from board
+  marioPartsHolePunched: number;      // how many times HP has been hole-punched
+  mainSqueezeTimer: number;           // ms countdown for main_squeeze attack
+  holePunchInnerTimer: number;        // ms for hole_punch_inner animation
+  gettinDownTimer: number;            // ms for gettin_down attack
 }
 
 export interface TargetedPanel {

@@ -273,47 +273,80 @@ export function drawBoss1Solo(ctx: CanvasRenderingContext2D, cx: number, cy: num
   void tick;
 }
 
-// Hole Punch — large yellow Z-shaped mechanical puncher
+// Hole Punch — yellow hole-punch machine with lever arm
 export function drawBoss2(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number, tick: number): void {
   ctx.save();
   const r = radius;
-  const punchAnim = Math.abs(Math.sin(tick * 0.002)) * r * 0.12;
+  const punchAnim = Math.abs(Math.sin(tick * 0.002)) * r * 0.18; // lever animates downward
 
-  ctx.fillStyle = '#ffcc00';
-  // Top bar
-  ctx.fillRect(cx - r * 0.65, cy - r * 0.6, r * 1.3, r * 0.28);
-  // Bottom bar (animates downward)
-  ctx.fillRect(cx - r * 0.65, cy + r * 0.28 + punchAnim, r * 1.3, r * 0.28);
-  // Diagonal connector
+  // Main yellow rectangular body (rounded corners)
+  ctx.fillStyle = '#ffdd44';
+  ctx.strokeStyle = '#cc9900';
+  ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(cx + r * 0.5, cy - r * 0.32);
-  ctx.lineTo(cx - r * 0.5, cy + r * 0.28 + punchAnim);
-  ctx.lineTo(cx - r * 0.65, cy + r * 0.28 + punchAnim);
-  ctx.lineTo(cx + r * 0.65, cy - r * 0.32);
-  ctx.closePath();
+  ctx.roundRect(cx - r * 0.58, cy - r * 0.55, r * 1.16, r * 1.05, r * 0.1);
+  ctx.fill();
+  ctx.stroke();
+
+  // Body shading (darker stripe on right)
+  ctx.fillStyle = '#ffcc00';
+  ctx.beginPath();
+  ctx.roundRect(cx + r * 0.28, cy - r * 0.55, r * 0.3, r * 1.05, [0, r * 0.1, r * 0.1, 0]);
   ctx.fill();
 
-  // Punch holes (eyes)
-  ctx.fillStyle = '#222';
-  ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.46, r * 0.12, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx + r * 0.3, cy - r * 0.46, r * 0.12, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx - r * 0.3, cy + r * 0.42 + punchAnim, r * 0.1, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx + r * 0.3, cy + r * 0.42 + punchAnim, r * 0.1, 0, Math.PI * 2); ctx.fill();
+  // Gray arm / lever on the left side
+  const armTopX = cx - r * 0.55;
+  const armTopY = cy - r * 0.38;
+  const armBotX = cx - r * 0.1;
+  const armBotY = cy + r * 0.2 + punchAnim;
+  // Lever body
+  ctx.strokeStyle = '#888888';
+  ctx.lineWidth = r * 0.2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(armTopX, armTopY);
+  ctx.lineTo(armBotX, armBotY);
+  ctx.stroke();
+  ctx.lineCap = 'butt';
 
-  // Bolts
-  ctx.fillStyle = '#886600';
-  for (const i of [-1, 1]) {
-    ctx.beginPath(); ctx.arc(cx + i * r * 0.55, cy - r * 0.46, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx + i * r * 0.55, cy + r * 0.42 + punchAnim, 4, 0, Math.PI * 2); ctx.fill();
-  }
+  // Circular punch die at bottom of lever
+  ctx.fillStyle = '#666666';
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(armBotX, armBotY + r * 0.08, r * 0.14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Dark rectangular punch slot at bottom
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.roundRect(cx - r * 0.45, cy + r * 0.38, r * 0.9, r * 0.13, 4);
+  ctx.fill();
+
+  // Eyes (dark circles on body)
+  ctx.fillStyle = '#333';
+  ctx.beginPath(); ctx.arc(cx + r * 0.1, cy - r * 0.2, r * 0.11, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + r * 0.38, cy - r * 0.2, r * 0.11, 0, Math.PI * 2); ctx.fill();
+  // Eye shine
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(cx + r * 0.13, cy - r * 0.23, r * 0.04, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + r * 0.41, cy - r * 0.23, r * 0.04, 0, Math.PI * 2); ctx.fill();
 
   // Angry eyebrows
   ctx.strokeStyle = '#884400';
-  ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(cx - r * 0.45, cy - r * 0.6); ctx.lineTo(cx - r * 0.15, cy - r * 0.55); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx + r * 0.45, cy - r * 0.6); ctx.lineTo(cx + r * 0.15, cy - r * 0.55); ctx.stroke();
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(cx + r * 0.01, cy - r * 0.33); ctx.lineTo(cx + r * 0.19, cy - r * 0.29); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx + r * 0.29, cy - r * 0.29); ctx.lineTo(cx + r * 0.49, cy - r * 0.33); ctx.stroke();
+
+  // Top bolt/knob on the machine
+  ctx.fillStyle = '#888888';
+  ctx.beginPath(); ctx.arc(cx - r * 0.55, cy - r * 0.38, r * 0.1, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#666'; ctx.lineWidth = 1.5;
+  ctx.stroke();
 
   ctx.restore();
+  void tick;
 }
 
 // Tape — purple tape dispenser with tan roll

@@ -159,6 +159,16 @@ export class Game {
             enemyTurnAnnounceTimer: 0,
             soloGrabHandsCursor: 0,
             holePunchAttackTimer: 0,
+            holePunchAnimPhase: 0,
+            holePunchShuffleCount: 0,
+            holePunchPunchCount: 0,
+            marioPartsHolePunched: 0,
+            mainSqueezeTimer: 0,
+            holePunchInnerTimer: 0,
+            gettinDownTimer: 0,
+            rubberBandArmsUsed: false,
+            rubberBandSoloWarned: false,
+            rubberBandNormalAttackUsed: false,
         };
     }
     resetForBoss(bossIndex) {
@@ -275,6 +285,16 @@ export class Game {
         this.state.enemyTurnAnnounceTimer = 0;
         this.state.soloGrabHandsCursor = 0;
         this.state.holePunchAttackTimer = 0;
+        this.state.holePunchAnimPhase = 0;
+        this.state.holePunchShuffleCount = 0;
+        this.state.holePunchPunchCount = 0;
+        this.state.marioPartsHolePunched = 0;
+        this.state.mainSqueezeTimer = 0;
+        this.state.holePunchInnerTimer = 0;
+        this.state.gettinDownTimer = 0;
+        this.state.rubberBandArmsUsed = false;
+        this.state.rubberBandSoloWarned = false;
+        this.state.rubberBandNormalAttackUsed = false;
         if (bossIndex === 1) {
             this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
             this.state.boss.maxHp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
@@ -415,7 +435,7 @@ export class Game {
             'boss_reload', 'pencil_grab', 'rainbow_smash', 'rainbow_roll_attack', 'pullback', 'bumper_bands',
             'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback',
             'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot',
-            'enemy_turn_announce', 'hole_punch_attack'];
+            'enemy_turn_announce', 'hole_punch_attack', 'main_squeeze', 'gettin_down', 'hole_punch_inner'];
         if ((e.key === 'p' || e.key === 'P') && fightPhases.includes(phase)) {
             e.preventDefault();
             this.state.paused = !this.state.paused;
@@ -645,7 +665,8 @@ export class Game {
                 this.spawnFlash('boss', '#ff6600');
                 return;
             }
-            if ((phase === 'boss_attack' || phase === 'pencil_rain' || phase === 'snap_shut' || phase === 'rainbow_roll_attack') && this.state.blockWindowOpen && !this.state.playerBlocked) {
+            if ((phase === 'boss_attack' || phase === 'pencil_rain' || phase === 'snap_shut' || phase === 'rainbow_roll_attack'
+                || phase === 'main_squeeze' || phase === 'gettin_down' || phase === 'hole_punch_inner') && this.state.blockWindowOpen && !this.state.playerBlocked) {
                 this.state.playerBlocked = true;
                 return;
             }
@@ -1089,6 +1110,24 @@ export class Game {
         else if (phase === 'solo_snapback_attack') {
             this.startSoloSnapbackAttack();
         }
+        else if (phase === 'main_squeeze') {
+            this.state.mainSqueezeTimer = 2500;
+            this.state.blockWindowOpen = false;
+            this.state.playerBlocked = false;
+            this.transitionTo('main_squeeze');
+        }
+        else if (phase === 'gettin_down') {
+            this.state.gettinDownTimer = 2000;
+            this.state.blockWindowOpen = false;
+            this.state.playerBlocked = false;
+            this.transitionTo('gettin_down');
+        }
+        else if (phase === 'hole_punch_inner') {
+            this.state.holePunchInnerTimer = 3000;
+            this.state.blockWindowOpen = false;
+            this.state.playerBlocked = false;
+            this.transitionTo('hole_punch_inner');
+        }
         else {
             // boss_attack (default)
             this.state.attackProjectileT = 0;
@@ -1117,6 +1156,23 @@ export class Game {
         else if (this.state.bossIndex === 1 && this.state.rubberBandSoloMode) {
             this.state.bossAttackName = 'SOLO SNAPBACK!';
             this.announceEnemyTurn('solo_snapback_attack');
+        }
+        else if (this.state.bossIndex === 2) {
+            // Hole Punch attack routing based on Mario's final ring
+            if (this.state.marioFinalRing <= 1) {
+                // Inner ring: Hole Punch + Base Slap
+                this.state.bossAttackName = 'HOLE PUNCH + BASE SLAP!';
+                this.announceEnemyTurn('hole_punch_inner');
+            }
+            else if (this.state.holePunchPunchCount === 0) {
+                // Outer ring, no punches yet: Gettin' Down
+                this.state.bossAttackName = "GETTIN' DOWN!";
+                this.announceEnemyTurn('gettin_down');
+            }
+            else {
+                this.state.bossAttackName = this.state.boss.name.toUpperCase() + '!';
+                this.announceEnemyTurn('boss_attack');
+            }
         }
         else {
             this.state.bossAttackName = this.state.boss.name.toUpperCase() + '!';
@@ -1160,6 +1216,19 @@ export class Game {
                     x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2.5, color: '#ff4444', scale: 1.5,
                 });
                 // Fall through to start hammer animation (applyFinalDamage will set base=0 for wrong position)
+            }
+        }
+        // Boss 2: show WRONG POSITION if not in back slots or wrong ring
+        if (this.state.bossIndex === 2) {
+            const hp2BackSlots = [10, 11, 0, 1];
+            const wrongSlot = !hp2BackSlots.includes(this.state.marioFinalSlot);
+            const wrongRing = this.state.marioFinalRing > 1;
+            if (wrongSlot || wrongRing) {
+                this.state.damageNumbers.push({
+                    value: 0, label: 'WRONG POSITION!',
+                    x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2.5, color: '#ff4444', scale: 1.5,
+                });
+                // Fall through — applyFinalDamage will set 0 damage
             }
         }
         // Range check: must be on ring 0 or 1
@@ -1218,6 +1287,24 @@ export class Game {
                     base = 0;
                 }
                 else if (!backSlots.includes(this.state.marioFinalSlot)) {
+                    base = 0;
+                }
+            }
+        }
+        // Boss 2 (Hole Punch): jump = 0 damage; hammer only in back slots + ring 0-1
+        if (this.state.bossIndex === 2) {
+            if (type === 'jump') {
+                base = 0;
+            }
+            else if (type === 'hammer') {
+                const hp2BackSlots = [10, 11, 0, 1];
+                const inCorrectSlot = hp2BackSlots.includes(this.state.marioFinalSlot);
+                const inCorrectRing = this.state.marioFinalRing <= 1;
+                if (inCorrectSlot && inCorrectRing) {
+                    // Good hit — restore 2-3 hole-punched panels
+                    this.restoreHolePunchedPanels(2 + Math.floor(Math.random() * 2));
+                }
+                else {
                     base = 0;
                 }
             }
@@ -1311,6 +1398,33 @@ export class Game {
             this.bossSpecialPending = true;
         }
         this.startEnemyTurn();
+    }
+    restoreHolePunchedPanels(count) {
+        const state = this.state;
+        const holePanels = [];
+        for (let r = 0; r < 4; r++) {
+            for (let s = 0; s < 12; s++) {
+                const p = state.rings[r].panels[s];
+                if (p === 'hole' || p === 'on_panel_holed') {
+                    holePanels.push({ r, s, type: p });
+                }
+            }
+        }
+        // Shuffle and restore up to count
+        for (let i = holePanels.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [holePanels[i], holePanels[j]] = [holePanels[j], holePanels[i]];
+        }
+        const restored = holePanels.slice(0, count);
+        if (restored.length > 0) {
+            for (const { r, s, type } of restored) {
+                state.rings[r].panels[s] = type === 'on_panel_holed' ? 'on_panel' : 'empty';
+            }
+            state.damageNumbers.push({
+                value: 0, label: `HOLES RESTORED! +${restored.length}`,
+                x: RING_CX, y: RING_CY - 70, alpha: 1, vy: -2, color: '#44ffcc', scale: 1.3,
+            });
+        }
     }
     generatePrimaryTargets() {
         const count = 4 + Math.floor(Math.random() * 3); // 4, 5, or 6
@@ -1742,12 +1856,11 @@ export class Game {
                     }
                 }
                 else if (state.bossIndex === 2) {
-                    // Hole Punch: punch holes then show announcement before puzzle
-                    state.rings[0].panels[4] = 'hole';
-                    state.rings[0].panels[5] = 'hole';
-                    state.rings[0].panels[6] = 'on_panel_holed';
-                    state.rings[0].panels[7] = 'hole';
+                    // Hole Punch: 2000ms animation then puzzle
+                    // Holes applied at the 1200ms mark (800ms remaining), not immediately
                     state.holePunchAttackTimer = 2000;
+                    state.holePunchAnimPhase = 0;
+                    state.holePunchShuffleCount = 0;
                     state.bossAttackName = 'HOLE PUNCH!';
                     this.transitionTo('hole_punch_attack');
                 }
@@ -1771,10 +1884,181 @@ export class Game {
                 break;
             }
             case 'hole_punch_attack': {
+                const prevTimer = state.holePunchAttackTimer;
                 state.holePunchAttackTimer = Math.max(0, state.holePunchAttackTimer - dt);
-                if (state.holePunchAttackTimer <= 0) {
+                const cur = state.holePunchAttackTimer;
+                // At 1200ms remaining (800ms elapsed): apply holes, set phase 1
+                if (state.holePunchAnimPhase === 0 && cur <= 1200 && prevTimer > 1200) {
+                    state.holePunchAnimPhase = 1;
+                    state.rings[0].panels[4] = 'hole';
+                    state.rings[0].panels[5] = 'hole';
+                    state.rings[0].panels[6] = 'on_panel_holed';
+                    state.rings[0].panels[7] = 'hole';
+                    this.spawnFlash('boss', '#ffff00');
+                }
+                // At 800ms remaining: first shuffle, phase 2
+                if (state.holePunchAnimPhase === 1 && cur <= 800 && prevTimer > 800) {
+                    state.holePunchAnimPhase = 2;
+                    state.holePunchShuffleCount = 1;
+                    const dir = Math.random() < 0.5 ? 1 : -1;
+                    const steps = 2 + Math.floor(Math.random() * 4);
+                    for (let i = 0; i < steps; i++)
+                        rotateRing(state.rings[0], dir);
+                }
+                // At 400ms remaining: second shuffle
+                if (state.holePunchAnimPhase === 2 && cur <= 400 && prevTimer > 400) {
+                    state.holePunchAnimPhase = 3;
+                    state.holePunchShuffleCount = 2;
+                    const dir = Math.random() < 0.5 ? 1 : -1;
+                    const steps = 2 + Math.floor(Math.random() * 4);
+                    for (let i = 0; i < steps; i++)
+                        rotateRing(state.rings[0], dir);
+                }
+                if (cur <= 0) {
                     state.bossAttackName = '';
+                    state.holePunchAnimPhase = 3;
                     this.transitionTo('puzzle');
+                }
+                break;
+            }
+            case 'main_squeeze': {
+                const SQUEEZE_BLOCK_START = 0.6; // last 40% of timer = block window
+                const totalTime = 2500;
+                const elapsed = totalTime - state.mainSqueezeTimer;
+                const frac = elapsed / totalTime; // 0 at start, 1 at end
+                state.mainSqueezeTimer = Math.max(0, state.mainSqueezeTimer - dt);
+                // Open block window during last 40%
+                if (frac >= SQUEEZE_BLOCK_START && !state.blockWindowOpen) {
+                    state.blockWindowOpen = true;
+                }
+                if (state.mainSqueezeTimer <= 0) {
+                    state.blockWindowOpen = false;
+                    if (!state.playerBlocked) {
+                        // Apply damage based on ring
+                        const ring = state.marioFinalRing;
+                        const ranges = [[15, 19], [14, 18], [13, 17], [12, 18]];
+                        const [minD, maxD] = ranges[Math.min(3, ring)];
+                        let rawDmg = minD + Math.floor(Math.random() * (maxD - minD + 1));
+                        rawDmg = this.applyGuardReduction(rawDmg);
+                        state.playerHp = Math.max(0, state.playerHp - rawDmg);
+                        const mp = this.marioScreenPos();
+                        state.damageNumbers.push({
+                            value: rawDmg, x: mp.x, y: mp.y - 20, alpha: 1, vy: -2.5,
+                            color: '#ff4444', scale: 1.5, label: `SQUEEEZE! -${rawDmg}`, effectType: 'damage',
+                        });
+                        this.spawnFlash('player', '#ff2200');
+                        state.lastBossDamage = rawDmg;
+                        if (state.playerHp <= 0) {
+                            this.transitionTo('game_over');
+                            break;
+                        }
+                    }
+                    else {
+                        state.damageNumbers.push({
+                            value: 0, label: 'BLOCKED!',
+                            x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2, color: '#44ddff', scale: 1.3,
+                        });
+                    }
+                    this.transitionTo('setup');
+                }
+                break;
+            }
+            case 'gettin_down': {
+                const GETDOWN_BLOCK_START = 0.6;
+                const totalTime = 2000;
+                const elapsed = totalTime - state.gettinDownTimer;
+                const frac = elapsed / totalTime;
+                state.gettinDownTimer = Math.max(0, state.gettinDownTimer - dt);
+                if (frac >= GETDOWN_BLOCK_START && !state.blockWindowOpen) {
+                    state.blockWindowOpen = true;
+                }
+                if (state.gettinDownTimer <= 0) {
+                    state.blockWindowOpen = false;
+                    if (!state.playerBlocked) {
+                        const ring = state.marioFinalRing;
+                        let rawDmg;
+                        if (ring === 2) {
+                            rawDmg = 9 + Math.floor(Math.random() * 3); // 9-11
+                        }
+                        else {
+                            rawDmg = 6 + Math.floor(Math.random() * 3); // 6-8
+                        }
+                        rawDmg = this.applyGuardReduction(rawDmg);
+                        state.playerHp = Math.max(0, state.playerHp - rawDmg);
+                        const mp = this.marioScreenPos();
+                        state.damageNumbers.push({
+                            value: rawDmg, x: mp.x, y: mp.y - 20, alpha: 1, vy: -2.5,
+                            color: '#ff8800', scale: 1.4, label: `GETTIN' DOWN! -${rawDmg}`, effectType: 'damage',
+                        });
+                        this.spawnFlash('player', '#ff4400');
+                        state.lastBossDamage = rawDmg;
+                        if (state.playerHp <= 0) {
+                            this.transitionTo('game_over');
+                            break;
+                        }
+                    }
+                    else {
+                        state.damageNumbers.push({
+                            value: 0, label: 'BLOCKED!',
+                            x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2, color: '#44ddff', scale: 1.3,
+                        });
+                    }
+                    this.transitionTo('setup');
+                }
+                break;
+            }
+            case 'hole_punch_inner': {
+                const INNER_BLOCK_START = 0.6;
+                const totalTime = 3000;
+                const elapsed = totalTime - state.holePunchInnerTimer;
+                const frac = elapsed / totalTime;
+                state.holePunchInnerTimer = Math.max(0, state.holePunchInnerTimer - dt);
+                if (frac >= INNER_BLOCK_START && !state.blockWindowOpen) {
+                    state.blockWindowOpen = true;
+                }
+                if (state.holePunchInnerTimer <= 0) {
+                    state.blockWindowOpen = false;
+                    // HP hole punch effect: decrement max HP
+                    state.marioPartsHolePunched++;
+                    // Compute HP accessory bonus
+                    const hpFromHeartPlus = (state.accessories.heartPlus ? 5 : 0)
+                        + (state.accessories.silverHeartPlus ? 10 : 0)
+                        + (state.accessories.goldHeartPlus ? 15 : 0)
+                        + state.maxUpHeartsBought * 20;
+                    const prevMax = state.playerMaxHp;
+                    state.playerMaxHp = Math.round(state.playerMaxHp / 2 + hpFromHeartPlus / 2);
+                    state.playerMaxHp = Math.max(10, state.playerMaxHp); // floor
+                    state.playerHp = Math.min(state.playerHp, state.playerMaxHp);
+                    state.damageNumbers.push({
+                        value: prevMax - state.playerMaxHp, label: `MAX HP -${prevMax - state.playerMaxHp}!`,
+                        x: RING_CX, y: RING_CY - 70, alpha: 1, vy: -2, color: '#ff66ff', scale: 1.3,
+                    });
+                    // Base Slap damage
+                    if (!state.playerBlocked) {
+                        const ring = state.marioFinalRing;
+                        const [minD, maxD] = ring === 0 ? [15, 18] : [11, 14];
+                        let slapDmg = minD + Math.floor(Math.random() * (maxD - minD + 1));
+                        slapDmg = this.applyGuardReduction(slapDmg);
+                        state.playerHp = Math.max(0, state.playerHp - slapDmg);
+                        const mp = this.marioScreenPos();
+                        state.damageNumbers.push({
+                            value: slapDmg, x: mp.x, y: mp.y - 20, alpha: 1, vy: -2.5,
+                            color: '#ff4444', scale: 1.5, label: `BASE SLAP! -${slapDmg}`, effectType: 'damage',
+                        });
+                        this.spawnFlash('player', '#ff0000');
+                        state.lastBossDamage = slapDmg;
+                        if (state.playerHp <= 0) {
+                            this.transitionTo('game_over');
+                            break;
+                        }
+                    }
+                    else {
+                        state.damageNumbers.push({
+                            value: 0, label: 'BLOCKED SLAP!',
+                            x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2, color: '#44ddff', scale: 1.3,
+                        });
+                    }
+                    this.transitionTo('setup');
                 }
                 break;
             }
@@ -1969,7 +2253,14 @@ export class Game {
                             x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2.5, color: '#ff4444', scale: 1.8,
                         });
                         this.spawnFlash('player', '#ff0000');
-                        this.startEnemyTurn();
+                        if (state.bossIndex === 2) {
+                            // Main Squeeze — boss 2 grabs Mario in a hole
+                            state.bossAttackName = 'MAIN SQUEEZE!';
+                            this.announceEnemyTurn('main_squeeze');
+                        }
+                        else {
+                            this.startEnemyTurn();
+                        }
                         break;
                     }
                     // Apply step effects
@@ -2081,6 +2372,20 @@ export class Game {
                                 msg = "Avoid the targeted panels, sneak behind the case, then whack the lid with your hammer!";
                             }
                         }
+                        else if (state.bossIndex === 1) {
+                            if (state.rubberBandSoloMode) {
+                                msg = "Watch the Rubber Band's movements carefully as you try to grab it! You'll have to time it juuust right...";
+                            }
+                            else if (state.rubberBandArmsUsed) {
+                                msg = "Get close to the enemy before using the 1,000-Fold Arms. The closer you are, the more bands you'll grab. Yank those rubber bands back as far as you can, then let 'em fly!";
+                            }
+                            else if (state.rubberBandNormalAttackUsed) {
+                                msg = "Normal attacks have no effect on this Rubber Band. Use your 1,000-Fold Arms to yank at it instead!";
+                            }
+                            else {
+                                msg = "Be bold! Try bumping against one of those rubber-band panels!";
+                            }
+                        }
                         if (msg) {
                             state.envelopeMessage = msg;
                             state.envelopeTimer = 5000;
@@ -2141,6 +2446,10 @@ export class Game {
                             this.transitionTo('mario_mash');
                         }
                         else if (state.marioReachedAction) {
+                            // Track boss 1 normal attack (reached action but not magic circle)
+                            if (state.bossIndex === 1 && !state.marioReachedMagicCircle) {
+                                state.rubberBandNormalAttackUsed = true;
+                            }
                             state.attackChoice = 'pending';
                             this.transitionTo('attack_choice');
                         }
@@ -2171,6 +2480,9 @@ export class Game {
                     else if (state.armsPullT > 0 && !state.armsPullDamageDealt) {
                         // Released — deal damage based on pull amount and Mario's ring
                         state.armsPullDamageDealt = true;
+                        // Track for envelope messages
+                        if (state.bossIndex === 1)
+                            state.rubberBandArmsUsed = true;
                         const inRange = state.marioFinalRing <= 1;
                         let rawDmg;
                         if (inRange) {

@@ -973,6 +973,12 @@ function getPhaseHint(state) {
             return 'Boss is preparing to attack...';
         case 'hole_punch_attack':
             return 'Hole Punch punches the inner ring!';
+        case 'main_squeeze':
+            return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'MAIN SQUEEZE — Hole Punch is closing in!';
+        case 'gettin_down':
+            return state.blockWindowOpen ? 'PRESS SPACE to block!' : "GETTIN' DOWN — rhythm attack incoming!";
+        case 'hole_punch_inner':
+            return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'HOLE PUNCH + BASE SLAP — brace for impact!';
         case 'save_prompt':
             return '← → navigate   ENTER confirm';
         default:
@@ -3174,17 +3180,32 @@ function drawSoloPhase(ctx, state, tick) {
             ctx.fillText('GET READY TO GRAB!', CANVAS_W / 2, bCY + 140);
             ctx.globalAlpha = 1;
         }
-        ctx.fillStyle = '#ffdd88';
-        ctx.font = '13px monospace';
-        ctx.lineWidth = 0;
-        ctx.fillText(`Attempt ${state.soloGrabAttempt + 1} of 2`, CANVAS_W / 2, bCY + 170);
+        // Warning banner: SOLO SNAPBACK CHARGING...
+        const bannerPulse = 0.55 + 0.45 * Math.sin(tick * 0.012);
+        const bannerW = 420;
+        const bannerH = 44;
+        const bannerX = CANVAS_W / 2 - bannerW / 2;
+        const bannerY = bCY + 130;
+        ctx.save();
+        ctx.globalAlpha = bannerPulse;
+        ctx.fillStyle = '#cc3300';
+        ctx.strokeStyle = '#ff6600';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(bannerX, bannerY, bannerW, bannerH, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffcc44';
+        ctx.font = 'bold 20px monospace';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 4;
+        ctx.strokeText('SOLO SNAPBACK CHARGING...', CANVAS_W / 2, bannerY + 29);
+        ctx.fillText('SOLO SNAPBACK CHARGING...', CANVAS_W / 2, bannerY + 29);
+        ctx.restore();
     }
     if (phase === 'solo_grab_attempt') {
-        // Attempt counter
-        ctx.fillStyle = '#ffdd88';
-        ctx.font = 'bold 14px monospace';
-        ctx.lineWidth = 0;
-        ctx.fillText(`Attempt ${state.soloGrabAttempt + 1} / 2`, CANVAS_W / 2, bCY + 145);
         // Oscillation indicator (only during moving)
         if (state.soloGrabSubPhase === 'moving') {
             const progress = state.soloGrabTimer / 3000;
@@ -3371,6 +3392,126 @@ function drawPullback(ctx, state, tick) {
     ctx.restore();
     void tick;
 }
+function drawMainSqueezePhase(ctx, state, tick) {
+    const totalTime = 2500;
+    const elapsed = totalTime - state.mainSqueezeTimer;
+    const frac = Math.min(1, elapsed / totalTime);
+    // Growing boss circle approaching Mario
+    const bossStartR = BOSS_RADIUS * 0.5;
+    const bossEndR = BOSS_RADIUS * 1.4;
+    const bossR = bossStartR + (bossEndR - bossStartR) * frac;
+    const approachX = RING_CX + (1 - frac) * 0;
+    const approachY = RING_CY - (1 - frac) * 30;
+    ctx.save();
+    ctx.globalAlpha = 0.55 + 0.35 * frac;
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath();
+    ctx.arc(approachX, approachY, bossR * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // Label banner
+    const pulse = 0.8 + 0.2 * Math.sin(tick * 0.02);
+    ctx.globalAlpha = pulse;
+    const bw = 360, bh = 55;
+    const bx = CANVAS_W / 2 - bw / 2;
+    const by = RING_CY - bh - BOSS_RADIUS - 10;
+    ctx.fillStyle = '#cc3300';
+    ctx.strokeStyle = '#ff6600';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffdd44';
+    ctx.font = 'bold 26px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.strokeText('MAIN SQUEEZE!', CANVAS_W / 2, by + 36);
+    ctx.fillText('MAIN SQUEEZE!', CANVAS_W / 2, by + 36);
+    ctx.restore();
+    void tick;
+}
+function drawGettinDownPhase(ctx, state, tick) {
+    const totalTime = 2000;
+    const elapsed = totalTime - state.gettinDownTimer;
+    const frac = Math.min(1, elapsed / totalTime);
+    ctx.save();
+    // Animated "music notes" visual
+    const pulse = 0.8 + 0.2 * Math.sin(tick * 0.025);
+    ctx.globalAlpha = pulse;
+    const bw = 380, bh = 55;
+    const bx = CANVAS_W / 2 - bw / 2;
+    const by = RING_CY - bh - BOSS_RADIUS - 10;
+    ctx.fillStyle = '#442200';
+    ctx.strokeStyle = '#ffaa00';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffcc44';
+    ctx.font = "bold 26px monospace";
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.strokeText("GETTIN' DOWN!", CANVAS_W / 2, by + 36);
+    ctx.fillText("GETTIN' DOWN!", CANVAS_W / 2, by + 36);
+    // Progress bar
+    const barW = 300, barH = 14;
+    const barX = CANVAS_W / 2 - barW / 2;
+    const barY = by + bh + 10;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#ff8800';
+    ctx.fillRect(barX, barY, barW * frac, barH);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.restore();
+    void tick;
+}
+function drawHolePunchInnerPhase(ctx, state, tick) {
+    const totalTime = 3000;
+    const elapsed = totalTime - state.holePunchInnerTimer;
+    const frac = Math.min(1, elapsed / totalTime);
+    ctx.save();
+    const pulse = 0.75 + 0.25 * Math.sin(tick * 0.02);
+    ctx.globalAlpha = pulse;
+    const bw = 460, bh = 55;
+    const bx = CANVAS_W / 2 - bw / 2;
+    const by = RING_CY - bh - BOSS_RADIUS - 10;
+    ctx.fillStyle = '#222';
+    ctx.strokeStyle = '#ffcc00';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.strokeText('HOLE PUNCH + BASE SLAP!', CANVAS_W / 2, by + 35);
+    ctx.fillText('HOLE PUNCH + BASE SLAP!', CANVAS_W / 2, by + 35);
+    // Progress bar
+    const barW = 340, barH = 14;
+    const barX = CANVAS_W / 2 - barW / 2;
+    const barY = by + bh + 10;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillRect(barX, barY, barW * frac, barH);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.restore();
+    void tick;
+}
 function drawEnemyTurnAnnounce(ctx, state, tick) {
     // Show for first 2000ms, then fade for 1000ms
     const elapsed = 3000 - state.enemyTurnAnnounceTimer;
@@ -3472,6 +3613,9 @@ export function render(ctx, state, tick) {
             return;
         case 'enemy_turn_announce':
         case 'hole_punch_attack':
+        case 'main_squeeze':
+        case 'gettin_down':
+        case 'hole_punch_inner':
         case 'rainbow_smash':
         case 'rainbow_roll_attack':
         case 'pullback':
@@ -3609,6 +3753,37 @@ export function render(ctx, state, tick) {
     }
     if (state.phase === 'trapped_snapback') {
         drawTrappedSnapback(ctx, state, tick);
+    }
+    if (state.phase === 'main_squeeze') {
+        drawMainSqueezePhase(ctx, state, tick);
+        drawBlockUI(ctx, state, tick);
+    }
+    if (state.phase === 'gettin_down') {
+        drawGettinDownPhase(ctx, state, tick);
+        drawBlockUI(ctx, state, tick);
+    }
+    if (state.phase === 'hole_punch_inner') {
+        drawHolePunchInnerPhase(ctx, state, tick);
+        drawBlockUI(ctx, state, tick);
+    }
+    if (state.phase === 'hole_punch_attack' && state.holePunchAnimPhase === 1) {
+        // Punch flash: bright yellow/white overlay on inner ring slots 4-7
+        const pulse = 0.6 + 0.4 * Math.sin(tick * 0.04);
+        ctx.save();
+        ctx.globalAlpha = pulse * 0.75;
+        ctx.fillStyle = '#ffff44';
+        // Draw flashes at approximate positions of inner ring slots 4-7
+        const innerR = BOSS_RADIUS + RING_WIDTH * 0.5;
+        for (let s = 4; s <= 7; s++) {
+            const angle = (s / 12) * Math.PI * 2 - Math.PI / 2;
+            const fx = RING_CX + Math.cos(angle) * innerR;
+            const fy = RING_CY + Math.sin(angle) * innerR;
+            ctx.beginPath();
+            ctx.arc(fx, fy, RING_WIDTH * 0.55, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
     }
     // Enemy's Turn announcement overlay
     if (state.phase === 'enemy_turn_announce') {
