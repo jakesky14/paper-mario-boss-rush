@@ -1629,6 +1629,19 @@ export class Game {
       this.state.coins -= cost;
       this.state.accessories[accKey] = true;
     }
+    // Persist shop purchase immediately so startGame() loads the updated values
+    try {
+      const existing = this.loadSaveData() as Record<string, unknown> | null;
+      const nextBossIndex = existing && typeof existing.nextBossIndex === 'number' ? existing.nextBossIndex : 0;
+      localStorage.setItem('pmBossRush', JSON.stringify({
+        coins: this.state.coins,
+        accessories: { ...this.state.accessories },
+        maxUpHeartsBought: this.state.maxUpHeartsBought,
+        maxUpHeartsInStock: this.state.maxUpHeartsInStock,
+        bossFirstClear: [...this.state.bossFirstClear],
+        nextBossIndex,
+      }));
+    } catch (_) { /* ignore */ }
   }
 
   private onBossDefeated(bossIndex: number): void {
