@@ -1137,10 +1137,9 @@ export class Game {
             this.transitionTo('hole_punch_inner');
         }
         else if (phase === 'throwing_punches') {
-            // Count active board punches from ring 0
+            // Count all ring 0 board holes (holes from any slot, including shuffled positions)
             const r0 = this.state.rings[0].panels;
-            const boardCount = [4, 5, 7].filter(s => r0[s] === 'hole').length
-                + (r0[6] === 'on_panel_holed' ? 1 : 0);
+            const boardCount = r0.filter(p => p === 'hole' || p === 'on_panel_holed').length;
             const marioCount = this.state.holePunchPunchCount;
             this.state.throwingPunchesBoardCount = boardCount;
             this.state.throwingPunchesTotal = boardCount + marioCount;
@@ -2092,6 +2091,7 @@ export class Game {
                 const THROW_BLOCK_START = 0.35;
                 const THROW_BLOCK_END = 0.75;
                 const THROW_DELAY = 600; // ms between punches
+                const isBoardPunchNow = state.throwingPunchesIdx < state.throwingPunchesBoardCount;
                 if (state.throwingPunchesDelayTimer > 0) {
                     state.throwingPunchesDelayTimer = Math.max(0, state.throwingPunchesDelayTimer - dt);
                     if (state.throwingPunchesDelayTimer <= 0) {
@@ -2104,11 +2104,14 @@ export class Game {
                 }
                 state.attackProjectileT = Math.min(1, state.attackProjectileT + dt / THROW_TRAVEL);
                 const frac = state.attackProjectileT;
-                if (frac >= THROW_BLOCK_START && frac <= THROW_BLOCK_END && !state.blockWindowOpen) {
-                    state.blockWindowOpen = true;
-                }
-                if (frac > THROW_BLOCK_END && state.blockWindowOpen) {
-                    state.blockWindowOpen = false;
+                // Board punches (hole punches) are unblockable — only Mario punches have a block window
+                if (!isBoardPunchNow) {
+                    if (frac >= THROW_BLOCK_START && frac <= THROW_BLOCK_END && !state.blockWindowOpen) {
+                        state.blockWindowOpen = true;
+                    }
+                    if (frac > THROW_BLOCK_END && state.blockWindowOpen) {
+                        state.blockWindowOpen = false;
+                    }
                 }
                 if (state.attackProjectileT >= 1) {
                     state.blockWindowOpen = false;
@@ -2116,19 +2119,19 @@ export class Game {
                     if (!state.playerBlocked) {
                         let dmg;
                         if (isBoardPunch) {
-                            dmg = 3;
+                            dmg = 3; // unblockable, no guard reduction
                         }
                         else {
                             dmg = 4 + Math.floor(Math.random() * 3); // 4-6
+                            dmg = this.applyGuardReduction(dmg);
                         }
-                        dmg = this.applyGuardReduction(dmg);
                         state.playerHp = Math.max(0, state.playerHp - dmg);
                         const mp = this.marioScreenPos();
                         state.damageNumbers.push({
                             value: dmg, x: mp.x, y: mp.y - 20, alpha: 1, vy: -2.5,
                             color: isBoardPunch ? '#ff8800' : '#ff4444',
                             scale: 1.4,
-                            label: isBoardPunch ? `BOARD PUNCH! -${dmg}` : `PUNCH! -${dmg}`,
+                            label: isBoardPunch ? `HOLE PUNCH! -${dmg}` : `PUNCH! -${dmg}`,
                             effectType: 'damage',
                         });
                         this.spawnFlash('player', isBoardPunch ? '#ff6600' : '#ff0000');
@@ -2148,13 +2151,13 @@ export class Game {
                     if (state.throwingPunchesIdx >= state.throwingPunchesTotal) {
                         // All punches thrown — restore board + place Mario punches as coins
                         const r0 = state.rings[0].panels;
-                        // Restore board holes to their original state
-                        for (const s of [4, 5, 7]) {
+                        // Restore all board holes (any slot that was punched)
+                        for (let s = 0; s < 12; s++) {
                             if (r0[s] === 'hole')
                                 r0[s] = 'empty';
+                            if (r0[s] === 'on_panel_holed')
+                                r0[s] = 'on_panel';
                         }
-                        if (r0[6] === 'on_panel_holed')
-                            r0[6] = 'on_panel';
                         // Place Mario punches as coin panels on random outer ring slots
                         const marioPunchCount = state.holePunchPunchCount;
                         if (marioPunchCount > 0) {

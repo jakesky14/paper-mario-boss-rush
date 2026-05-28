@@ -1140,8 +1140,12 @@ function getPhaseHint(state: GameState): string {
       return state.blockWindowOpen ? 'PRESS SPACE to block!' : "GETTIN' DOWN — rhythm attack incoming!";
     case 'hole_punch_inner':
       return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'HOLE PUNCH + BASE SLAP — brace for impact!';
-    case 'throwing_punches':
-      return state.blockWindowOpen ? 'PRESS SPACE to block!' : `THROWING PUNCHES — punch ${state.throwingPunchesIdx + 1} of ${state.throwingPunchesTotal}!`;
+    case 'throwing_punches': {
+      const isBoardP = state.throwingPunchesIdx < state.throwingPunchesBoardCount;
+      if (state.blockWindowOpen) return 'PRESS SPACE to block!';
+      if (isBoardP) return `HOLE PUNCH! (unblockable) — punch ${state.throwingPunchesIdx + 1} of ${state.throwingPunchesTotal}`;
+      return `THROWING PUNCHES — punch ${state.throwingPunchesIdx + 1} of ${state.throwingPunchesTotal} — PRESS SPACE to block!`;
+    }
     case 'save_prompt':
       return '← → navigate   ENTER confirm';
     default:
