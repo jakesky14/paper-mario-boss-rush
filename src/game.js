@@ -166,6 +166,10 @@ export class Game {
             mainSqueezeTimer: 0,
             holePunchInnerTimer: 0,
             gettinDownTimer: 0,
+            throwingPunchesIdx: 0,
+            throwingPunchesTotal: 0,
+            throwingPunchesBoardCount: 0,
+            throwingPunchesDelayTimer: 0,
             rubberBandArmsUsed: false,
             rubberBandSoloWarned: false,
             rubberBandNormalAttackUsed: false,
@@ -289,6 +293,10 @@ export class Game {
         this.state.holePunchShuffleCount = 0;
         this.state.holePunchPunchCount = 0;
         this.state.marioPartsHolePunched = 0;
+        this.state.throwingPunchesIdx = 0;
+        this.state.throwingPunchesTotal = 0;
+        this.state.throwingPunchesBoardCount = 0;
+        this.state.throwingPunchesDelayTimer = 0;
         this.state.mainSqueezeTimer = 0;
         this.state.holePunchInnerTimer = 0;
         this.state.gettinDownTimer = 0;
@@ -435,7 +443,7 @@ export class Game {
             'boss_reload', 'pencil_grab', 'rainbow_smash', 'rainbow_roll_attack', 'pullback', 'bumper_bands',
             'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback',
             'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot',
-            'enemy_turn_announce', 'hole_punch_attack', 'main_squeeze', 'gettin_down', 'hole_punch_inner'];
+            'enemy_turn_announce', 'hole_punch_attack', 'main_squeeze', 'gettin_down', 'hole_punch_inner', 'throwing_punches'];
         if ((e.key === 'p' || e.key === 'P') && fightPhases.includes(phase)) {
             e.preventDefault();
             this.state.paused = !this.state.paused;
@@ -666,7 +674,7 @@ export class Game {
                 return;
             }
             if ((phase === 'boss_attack' || phase === 'pencil_rain' || phase === 'snap_shut' || phase === 'rainbow_roll_attack'
-                || phase === 'main_squeeze' || phase === 'gettin_down' || phase === 'hole_punch_inner') && this.state.blockWindowOpen && !this.state.playerBlocked) {
+                || phase === 'main_squeeze' || phase === 'gettin_down' || phase === 'hole_punch_inner' || phase === 'throwing_punches') && this.state.blockWindowOpen && !this.state.playerBlocked) {
                 this.state.playerBlocked = true;
                 return;
             }
@@ -1128,6 +1136,21 @@ export class Game {
             this.state.playerBlocked = false;
             this.transitionTo('hole_punch_inner');
         }
+        else if (phase === 'throwing_punches') {
+            // Count active board punches from ring 0
+            const r0 = this.state.rings[0].panels;
+            const boardCount = [4, 5, 7].filter(s => r0[s] === 'hole').length
+                + (r0[6] === 'on_panel_holed' ? 1 : 0);
+            const marioCount = this.state.holePunchPunchCount;
+            this.state.throwingPunchesBoardCount = boardCount;
+            this.state.throwingPunchesTotal = boardCount + marioCount;
+            this.state.throwingPunchesIdx = 0;
+            this.state.attackProjectileT = 0;
+            this.state.throwingPunchesDelayTimer = 0;
+            this.state.blockWindowOpen = false;
+            this.state.playerBlocked = false;
+            this.transitionTo('throwing_punches');
+        }
         else {
             // boss_attack (default)
             this.state.attackProjectileT = 0;
@@ -1165,13 +1188,14 @@ export class Game {
                 this.announceEnemyTurn('hole_punch_inner');
             }
             else if (this.state.holePunchPunchCount === 0) {
-                // Outer ring, no punches yet: Gettin' Down
+                // Outer ring, no punches: Gettin' Down
                 this.state.bossAttackName = "GETTIN' DOWN!";
                 this.announceEnemyTurn('gettin_down');
             }
             else {
-                this.state.bossAttackName = this.state.boss.name.toUpperCase() + '!';
-                this.announceEnemyTurn('boss_attack');
+                // Outer ring, has Mario punches: Throwing Punches
+                this.state.bossAttackName = 'THROWING PUNCHES!';
+                this.announceEnemyTurn('throwing_punches');
             }
         }
         else {
@@ -2018,8 +2042,9 @@ export class Game {
                 }
                 if (state.holePunchInnerTimer <= 0) {
                     state.blockWindowOpen = false;
-                    // HP hole punch effect: decrement max HP
+                    // HP hole punch effect: decrement max HP; Hole Punch gains a punch
                     state.marioPartsHolePunched++;
+                    state.holePunchPunchCount++; // Hole Punch acquires a Mario punch to use later
                     // Compute HP accessory bonus
                     const hpFromHeartPlus = (state.accessories.heartPlus ? 5 : 0)
                         + (state.accessories.silverHeartPlus ? 10 : 0)
@@ -2059,6 +2084,104 @@ export class Game {
                         });
                     }
                     this.transitionTo('setup');
+                }
+                break;
+            }
+            case 'throwing_punches': {
+                const THROW_TRAVEL = 900; // ms per punch projectile
+                const THROW_BLOCK_START = 0.35;
+                const THROW_BLOCK_END = 0.75;
+                const THROW_DELAY = 600; // ms between punches
+                if (state.throwingPunchesDelayTimer > 0) {
+                    state.throwingPunchesDelayTimer = Math.max(0, state.throwingPunchesDelayTimer - dt);
+                    if (state.throwingPunchesDelayTimer <= 0) {
+                        // Start next punch
+                        state.attackProjectileT = 0;
+                        state.blockWindowOpen = false;
+                        state.playerBlocked = false;
+                    }
+                    break;
+                }
+                state.attackProjectileT = Math.min(1, state.attackProjectileT + dt / THROW_TRAVEL);
+                const frac = state.attackProjectileT;
+                if (frac >= THROW_BLOCK_START && frac <= THROW_BLOCK_END && !state.blockWindowOpen) {
+                    state.blockWindowOpen = true;
+                }
+                if (frac > THROW_BLOCK_END && state.blockWindowOpen) {
+                    state.blockWindowOpen = false;
+                }
+                if (state.attackProjectileT >= 1) {
+                    state.blockWindowOpen = false;
+                    const isBoardPunch = state.throwingPunchesIdx < state.throwingPunchesBoardCount;
+                    if (!state.playerBlocked) {
+                        let dmg;
+                        if (isBoardPunch) {
+                            dmg = 3;
+                        }
+                        else {
+                            dmg = 4 + Math.floor(Math.random() * 3); // 4-6
+                        }
+                        dmg = this.applyGuardReduction(dmg);
+                        state.playerHp = Math.max(0, state.playerHp - dmg);
+                        const mp = this.marioScreenPos();
+                        state.damageNumbers.push({
+                            value: dmg, x: mp.x, y: mp.y - 20, alpha: 1, vy: -2.5,
+                            color: isBoardPunch ? '#ff8800' : '#ff4444',
+                            scale: 1.4,
+                            label: isBoardPunch ? `BOARD PUNCH! -${dmg}` : `PUNCH! -${dmg}`,
+                            effectType: 'damage',
+                        });
+                        this.spawnFlash('player', isBoardPunch ? '#ff6600' : '#ff0000');
+                        state.lastBossDamage = dmg;
+                        if (state.playerHp <= 0) {
+                            this.transitionTo('game_over');
+                            break;
+                        }
+                    }
+                    else {
+                        state.damageNumbers.push({
+                            value: 0, label: 'BLOCKED!',
+                            x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2, color: '#44ddff', scale: 1.3,
+                        });
+                    }
+                    state.throwingPunchesIdx++;
+                    if (state.throwingPunchesIdx >= state.throwingPunchesTotal) {
+                        // All punches thrown — restore board + place Mario punches as coins
+                        const r0 = state.rings[0].panels;
+                        // Restore board holes to their original state
+                        for (const s of [4, 5, 7]) {
+                            if (r0[s] === 'hole')
+                                r0[s] = 'empty';
+                        }
+                        if (r0[6] === 'on_panel_holed')
+                            r0[6] = 'on_panel';
+                        // Place Mario punches as coin panels on random outer ring slots
+                        const marioPunchCount = state.holePunchPunchCount;
+                        if (marioPunchCount > 0) {
+                            const candidates = [];
+                            for (const r of [2, 3]) {
+                                for (let c = 0; c < 12; c++) {
+                                    if (state.rings[r].panels[c] === 'empty')
+                                        candidates.push([r, c]);
+                                }
+                            }
+                            // shuffle candidates
+                            for (let i = candidates.length - 1; i > 0; i--) {
+                                const j = Math.floor(Math.random() * (i + 1));
+                                [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+                            }
+                            const toPlace = Math.min(marioPunchCount, candidates.length);
+                            for (let i = 0; i < toPlace; i++) {
+                                const [r, c] = candidates[i];
+                                state.rings[r].panels[c] = 'coin';
+                            }
+                        }
+                        state.holePunchPunchCount = 0;
+                        this.transitionTo('setup');
+                    }
+                    else {
+                        state.throwingPunchesDelayTimer = THROW_DELAY;
+                    }
                 }
                 break;
             }

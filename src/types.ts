@@ -43,7 +43,8 @@ export type Phase =
   | 'hole_punch_attack'
   | 'main_squeeze'
   | 'gettin_down'
-  | 'hole_punch_inner';
+  | 'hole_punch_inner'
+  | 'throwing_punches';
 
 export interface AccessoryInventory {
   heartPlus: boolean;
@@ -291,11 +292,17 @@ export interface GameState {
   holePunchAttackTimer: number;       // ms display timer for hole_punch_attack phase
   holePunchAnimPhase: number;         // 0=pre-punch, 1=punching, 2=shuffling, 3=done
   holePunchShuffleCount: number;      // how many shuffles done
-  holePunchPunchCount: number;        // number of punches acquired from board
+  holePunchPunchCount: number;        // Mario punches Hole Punch has (from hitting Mario with inner attack)
   marioPartsHolePunched: number;      // how many times HP has been hole-punched
   mainSqueezeTimer: number;           // ms countdown for main_squeeze attack
   holePunchInnerTimer: number;        // ms for hole_punch_inner animation
   gettinDownTimer: number;            // ms for gettin_down attack
+
+  // Throwing Punches attack
+  throwingPunchesIdx: number;         // which punch is currently being thrown
+  throwingPunchesTotal: number;       // total punches this attack
+  throwingPunchesBoardCount: number;  // how many are board punches (3 dmg); rest are Mario punches (4-6)
+  throwingPunchesDelayTimer: number;  // ms pause between punches
 }
 
 export interface TargetedPanel {

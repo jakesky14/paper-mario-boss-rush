@@ -979,6 +979,8 @@ function getPhaseHint(state) {
             return state.blockWindowOpen ? 'PRESS SPACE to block!' : "GETTIN' DOWN — rhythm attack incoming!";
         case 'hole_punch_inner':
             return state.blockWindowOpen ? 'PRESS SPACE to block!' : 'HOLE PUNCH + BASE SLAP — brace for impact!';
+        case 'throwing_punches':
+            return state.blockWindowOpen ? 'PRESS SPACE to block!' : `THROWING PUNCHES — punch ${state.throwingPunchesIdx + 1} of ${state.throwingPunchesTotal}!`;
         case 'save_prompt':
             return '← → navigate   ENTER confirm';
         default:
@@ -2417,7 +2419,8 @@ function drawPauseButton(ctx, state, tick) {
         'mario_mash', 'boss_attack', 'primary_target', 'pencil_cutscene', 'pencil_rain', 'snap_shut',
         'boss_reload', 'pencil_grab', 'rainbow_smash', 'rainbow_roll_attack', 'pullback', 'bumper_bands',
         'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback',
-        'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot'];
+        'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot',
+        'gettin_down', 'hole_punch_inner', 'throwing_punches', 'main_squeeze'];
     if (!fightPhases.includes(state.phase))
         return;
     const { x, y, w, h } = PAUSE_BTN;
@@ -3512,6 +3515,70 @@ function drawHolePunchInnerPhase(ctx, state, tick) {
     ctx.restore();
     void tick;
 }
+function drawThrowingPunchesPhase(ctx, state, tick) {
+    const isBoardPunch = state.throwingPunchesIdx < state.throwingPunchesBoardCount;
+    const frac = state.throwingPunchesDelayTimer > 0 ? 0 : state.attackProjectileT;
+    // Title banner
+    ctx.save();
+    const bw = 460, bh = 55;
+    const bx = CANVAS_W / 2 - bw / 2;
+    const by = RING_CY - bh - BOSS_RADIUS - 10;
+    ctx.fillStyle = '#222';
+    ctx.strokeStyle = isBoardPunch ? '#ff8800' : '#ff4444';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = isBoardPunch ? '#ffaa44' : '#ff8888';
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    const label = isBoardPunch ? 'THROWING PUNCHES (BOARD)' : 'THROWING PUNCHES (MARIO)';
+    ctx.strokeText(label, CANVAS_W / 2, by + 35);
+    ctx.fillText(label, CANVAS_W / 2, by + 35);
+    // Counter
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText(`Punch ${state.throwingPunchesIdx + 1} / ${state.throwingPunchesTotal}`, CANVAS_W / 2, by - 12);
+    // Projectile fist flying from boss to Mario
+    if (frac > 0 && frac < 1) {
+        const { x: mx, y: my } = marioScreenPosForState(state);
+        const startX = RING_CX;
+        const startY = RING_CY;
+        const px = startX + (mx - startX) * frac;
+        const py = startY + (my - startY) * frac + Math.sin(frac * Math.PI) * -30;
+        ctx.save();
+        ctx.shadowColor = isBoardPunch ? '#ff8800' : '#ff4444';
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = isBoardPunch ? '#ff8800' : '#cc2222';
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(px, py, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // Fist symbol
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✊', px, py);
+        ctx.restore();
+    }
+    ctx.restore();
+    void tick;
+}
+function marioScreenPosForState(state) {
+    // Same logic as game.ts marioScreenPos — ring slot to canvas position
+    const ring = state.marioFinalRing;
+    const slot = state.marioFinalSlot;
+    const r = BOSS_RADIUS + RING_WIDTH * (ring + 0.5);
+    const angle = (slot / 12) * Math.PI * 2 - Math.PI / 2;
+    return { x: RING_CX + Math.cos(angle) * r, y: RING_CY + Math.sin(angle) * r };
+}
 function drawEnemyTurnAnnounce(ctx, state, tick) {
     // Show for first 2000ms, then fade for 1000ms
     const elapsed = 3000 - state.enemyTurnAnnounceTimer;
@@ -3616,6 +3683,7 @@ export function render(ctx, state, tick) {
         case 'main_squeeze':
         case 'gettin_down':
         case 'hole_punch_inner':
+        case 'throwing_punches':
         case 'rainbow_smash':
         case 'rainbow_roll_attack':
         case 'pullback':
@@ -3764,6 +3832,10 @@ export function render(ctx, state, tick) {
     }
     if (state.phase === 'hole_punch_inner') {
         drawHolePunchInnerPhase(ctx, state, tick);
+        drawBlockUI(ctx, state, tick);
+    }
+    if (state.phase === 'throwing_punches') {
+        drawThrowingPunchesPhase(ctx, state, tick);
         drawBlockUI(ctx, state, tick);
     }
     if (state.phase === 'hole_punch_attack' && state.holePunchAnimPhase === 1) {
