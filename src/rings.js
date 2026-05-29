@@ -192,7 +192,7 @@ export function simulatePath(rings, startRing = 3, startSlot = 6, magicCircleAct
                 slot = (slot + 1) % 12;
             }
         }
-        else if (panel === 'magic_circle') {
+        else if (panel === 'magic_circle' || panel === 'arms_magic_circle') {
             if (magicCircleActive) {
                 // Active magic circle stops Mario
                 steps.push({ ring, slot, panel, pauseMs: 300 });

@@ -65,6 +65,7 @@ const PANEL_COLORS: Record<PanelType, string> = {
   on_panel_holed: '#22aa44',
   mario_part:    '#cc2244',
   earth_vellumental: '#116611',
+  arms_magic_circle: '#0044cc',
 };
 
 // Ring background colors — warm tones matching screenshot
@@ -423,6 +424,23 @@ function drawPanelIcon(
       ctx.beginPath();
       ctx.arc(0, -size * 0.58, size * 0.2, 0, Math.PI * 2);
       ctx.fill();
+      break;
+    }
+    case 'arms_magic_circle': {
+      // Dark blue circle with golden fist symbol
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.8, 0, Math.PI * 2);
+      ctx.fillStyle = '#001166';
+      ctx.fill();
+      ctx.strokeStyle = '#4488ff';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      // Golden arm/fist
+      ctx.fillStyle = '#ffdd00';
+      ctx.font = `bold ${Math.round(size * 0.9)}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('✊', 0, 0);
       break;
     }
   }
@@ -1202,9 +1220,11 @@ function getPhaseHint(state: GameState): string {
     case 'whole_punch_attempt':
       return state.marioElevated ? 'ELEVATED! Hole Punch will bonk your tile!' : 'THE WHOLE PUNCH! (no elevation — brace for impact!)';
     case 'whole_punch_arms':
-      return state.wholePunchPulling
-        ? `Ripping... ${Math.round(state.wholePunchPullT * 100)}% — Keep pressing ← !`
-        : state.wholePunchArmsPos === 3 ? 'PRESS SPACE to grip the lid corner!' : 'Use ← → to move hands to the RIGHT CORNER!';
+      return state.wholePunchMashDone
+        ? (state.wholePunchPulling
+            ? `Ripping... ${Math.round(state.wholePunchPullT * 100)}% — Keep pressing ← !`
+            : state.wholePunchArmsPos === 3 ? 'PRESS SPACE to grip the lid corner!' : 'Use ← → to move hands to the RIGHT CORNER!')
+        : `MASH SPACE to smash the flipped boss! (${state.wholePunchMashCount}/10)`;
     case 'save_prompt':
       return '← → navigate   ENTER confirm';
     default:
@@ -4128,81 +4148,145 @@ function drawWholePunchAttempt(ctx: CanvasRenderingContext2D, state: GameState, 
 function drawWholePunchArms(ctx: CanvasRenderingContext2D, state: GameState, tick: number): void {
   ctx.save();
 
-  // Flipped Hole Punch boss (gray/dark rounded rectangle flipped over)
-  const bx = RING_CX, by = RING_CY - BOSS_RADIUS - 20;
-  ctx.fillStyle = '#555555';
-  ctx.strokeStyle = '#333333';
-  ctx.lineWidth = 4;
-  // Flipped body (upside-down)
+  // ZOOM: scale canvas to focus on the lid area
+  const zoomScale = 1.6;
+  const focusX = RING_CX;
+  const focusY = RING_CY - BOSS_RADIUS - 30;
+  ctx.translate(focusX, focusY);
+  ctx.scale(zoomScale, zoomScale);
+  ctx.translate(-focusX, -focusY);
+
+  // ---- Flipped Hole Punch lid (large dark gray tilted slab) ----
+  const lidCX = RING_CX;
+  const lidCY = RING_CY - BOSS_RADIUS - 20;
+
   ctx.save();
-  ctx.translate(bx, by);
-  ctx.rotate(Math.PI); // flipped
+  ctx.translate(lidCX, lidCY);
+  ctx.rotate(-0.08); // slight tilt
+
+  // Main lid body — wide flat slab
+  const lidW = 220, lidH = 90;
+  ctx.fillStyle = '#404040';
+  ctx.strokeStyle = '#222222';
+  ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.roundRect(-55, -25, 110, 50, 12);
-  ctx.fill(); ctx.stroke();
-  // Handle (lever)
-  ctx.fillStyle = '#888888';
+  ctx.roundRect(-lidW / 2, -lidH / 2, lidW, lidH, 10);
+  ctx.fill();
+  ctx.stroke();
+
+  // Circular indent/groove in center
+  ctx.strokeStyle = '#888888';
+  ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.rect(-8, -48, 16, 26);
-  ctx.fill(); ctx.stroke();
+  ctx.arc(0, 0, 30, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, 18, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Lid edge highlight
+  ctx.strokeStyle = '#666666';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-lidW / 2 + 6, -lidH / 2 + 6, lidW - 12, lidH - 12, 6);
+  ctx.stroke();
+
+  // Hinge nub on one side
+  ctx.fillStyle = '#555555';
+  ctx.beginPath();
+  ctx.roundRect(lidW / 2 - 2, -15, 14, 30, 4);
+  ctx.fill();
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
   ctx.restore();
 
-  // Banner
-  const bw = 460, bh = 50;
-  const bannerX = CANVAS_W / 2 - bw / 2, bannerY = RING_CY - bh - BOSS_RADIUS - 10;
-  ctx.fillStyle = '#222';
-  ctx.strokeStyle = '#44ff44';
-  ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.roundRect(bannerX, bannerY, bw, bh, 8); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#44ff88';
-  ctx.font = 'bold 20px monospace';
-  ctx.textAlign = 'center';
-  ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
-  const msg = state.wholePunchPulling
-    ? `RIPPING! ← ← ←  ${Math.round(state.wholePunchPullT * 100)}%`
-    : state.wholePunchArmsPos === 3 ? 'PRESS SPACE to grip lid corner!' : 'Move hands to RIGHT CORNER with ←/→';
-  ctx.strokeText(msg, CANVAS_W / 2, bannerY + 33);
-  ctx.fillText(msg, CANVAS_W / 2, bannerY + 33);
-
-  // Arms cursor — red bezier arms
-  const footX = CANVAS_W / 2, footY = RING_CY + BOSS_RADIUS + 20;
-  const cursorOff = state.wholePunchArmsPos * 50;
-  const targetX = RING_CX + cursorOff;
-  const isAligned = state.wholePunchArmsPos === 3;
-  const armColor = state.wholePunchPulling ? '#44ff88' : isAligned ? '#ffdd00' : '#cc2222';
-  for (const side of [-1, 1]) {
-    const handX = targetX + side * 30;
-    const handY = by - 15;
-    ctx.beginPath();
-    ctx.moveTo(footX + side * 40, footY);
-    ctx.bezierCurveTo(footX + side * 80, footY - 80, handX + side * 30, handY + 60, handX, handY);
-    ctx.strokeStyle = armColor;
-    ctx.lineWidth = 12;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(handX, handY, 12, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.strokeStyle = armColor;
+  // ---- Sub-phase UI ----
+  if (!state.wholePunchMashDone) {
+    // MASH sub-phase
+    const pulse = 0.7 + 0.3 * Math.sin(tick * 0.06);
+    const bw = 440, bh = 52;
+    const bx = CANVAS_W / 2 - bw / 2, by = RING_CY + BOSS_RADIUS + 14;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#882200';
+    ctx.strokeStyle = '#ff6600';
     ctx.lineWidth = 3;
-    ctx.stroke();
-  }
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffaa44';
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
+    ctx.strokeText(`RUSH! MASH SPACE! (${state.wholePunchMashCount}/10)`, CANVAS_W / 2, by + 33);
+    ctx.fillText(`RUSH! MASH SPACE! (${state.wholePunchMashCount}/10)`, CANVAS_W / 2, by + 33);
 
-  // Pull progress bar
-  if (state.wholePunchPulling) {
-    const barW = 300, barH = 18;
-    const barX = CANVAS_W / 2 - barW / 2, barY2 = bannerY + bh + 8;
-    ctx.fillStyle = '#333'; ctx.fillRect(barX, barY2, barW, barH);
-    ctx.fillStyle = '#44ff44'; ctx.fillRect(barX, barY2, barW * state.wholePunchPullT, barH);
-    ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.strokeRect(barX, barY2, barW, barH);
-  }
+    // Timer bar
+    const frac = state.wholePunchMashTimer / 5000;
+    const barW = 300, barH = 10;
+    const barX = CANVAS_W / 2 - barW / 2, barY = by + bh + 6;
+    ctx.fillStyle = '#333'; ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = frac > 0.4 ? '#ff6600' : '#ff2222';
+    ctx.fillRect(barX, barY, barW * frac, barH);
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.strokeRect(barX, barY, barW, barH);
 
-  // Position indicator
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 14px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText(`Position: ${state.wholePunchArmsPos} / 3`, CANVAS_W / 2, bannerY - 12);
+  } else {
+    // RIP sub-phase
+    const bw = 460, bh = 50;
+    const bannerX = CANVAS_W / 2 - bw / 2, bannerY = RING_CY + BOSS_RADIUS + 14;
+    ctx.fillStyle = '#222';
+    ctx.strokeStyle = '#44ff44';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(bannerX, bannerY, bw, bh, 8); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#44ff88';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
+    const msg = state.wholePunchPulling
+      ? `RIPPING! ← ← ←  ${Math.round(state.wholePunchPullT * 100)}%`
+      : state.wholePunchArmsPos === 3 ? 'PRESS SPACE to grip lid corner!' : 'Move hands to RIGHT CORNER with ←/→';
+    ctx.strokeText(msg, CANVAS_W / 2, bannerY + 33);
+    ctx.fillText(msg, CANVAS_W / 2, bannerY + 33);
+
+    // Arms cursor
+    const footX = CANVAS_W / 2, footY = RING_CY + BOSS_RADIUS + 80;
+    const cursorOff = state.wholePunchArmsPos * 50;
+    const targetX = RING_CX + cursorOff;
+    const isAligned = state.wholePunchArmsPos === 3;
+    const armColor = state.wholePunchPulling ? '#44ff88' : isAligned ? '#ffdd00' : '#cc2222';
+    for (const side of [-1, 1]) {
+      const handX = targetX + side * 30;
+      const handY = lidCY + 50;
+      ctx.beginPath();
+      ctx.moveTo(footX + side * 40, footY);
+      ctx.bezierCurveTo(footX + side * 80, footY - 80, handX + side * 30, handY + 60, handX, handY);
+      ctx.strokeStyle = armColor;
+      ctx.lineWidth = 12;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(handX, handY, 12, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = armColor;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    // Pull progress bar
+    if (state.wholePunchPulling) {
+      const barW = 300, barH = 18;
+      const barX = CANVAS_W / 2 - barW / 2, barY2 = bannerY + bh + 8;
+      ctx.fillStyle = '#333'; ctx.fillRect(barX, barY2, barW, barH);
+      ctx.fillStyle = '#44ff44'; ctx.fillRect(barX, barY2, barW * state.wholePunchPullT, barH);
+      ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.strokeRect(barX, barY2, barW, barH);
+    }
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Position: ${state.wholePunchArmsPos} / 3`, CANVAS_W / 2, bannerY - 12);
+  }
 
   ctx.restore();
   void tick;

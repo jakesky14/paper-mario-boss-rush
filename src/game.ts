@@ -208,6 +208,12 @@ export class Game {
       wholePunchPullT: 0,
       wholePunchAttemptTimer: 0,
       wholePunchChargeTimer: 0,
+      wholePunchMashDone: false,
+      wholePunchMashTimer: 0,
+      wholePunchMashCount: 0,
+      wholePunchMashCooldown: 0,
+      marioReachedArmsMagicCircle: false,
+      armsMashWeakMode: false,
     };
   }
 
@@ -349,6 +355,12 @@ export class Game {
     this.state.wholePunchPullT = 0;
     this.state.wholePunchAttemptTimer = 0;
     this.state.wholePunchChargeTimer = 0;
+    this.state.wholePunchMashDone = false;
+    this.state.wholePunchMashTimer = 0;
+    this.state.wholePunchMashCount = 0;
+    this.state.wholePunchMashCooldown = 0;
+    this.state.marioReachedArmsMagicCircle = false;
+    this.state.armsMashWeakMode = false;
     if (bossIndex === 1) {
       this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
       this.state.boss.maxHp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
@@ -378,6 +390,9 @@ export class Game {
       this.state.rings[0].panels[5] = 'empty';
       this.state.rings[0].panels[6] = 'on_panel';
       this.state.rings[0].panels[7] = 'empty';
+      this.state.rings[0].panels[9] = 'arms_magic_circle';
+      this.state.marioReachedArmsMagicCircle = false;
+      this.state.armsMashWeakMode = false;
     }
 
     // Treasure chest deferred rewards: place +1, ×2, coins, and hearts on board next turn
@@ -432,6 +447,10 @@ export class Game {
     this.state.attackQuality = 'none';
     this.state.envelopeMessage = '';
     this.state.envelopeTimer = 0;
+    if (this.state.bossIndex === 2 && this.state.turnNumber === 1) {
+      this.state.envelopeMessage = "The Hole Punch's yellow body is really tough! He's hiding a vulnerable spot somewhere...";
+      this.state.envelopeTimer = 7000;
+    }
     this.state.attacksRemaining = 1;
     // magicCircleActive persists between turns until used
     this.state.marioReachedMagicCircle = false;
@@ -505,10 +524,6 @@ export class Game {
             this.state.soloSlingshotLaunched = true;
           }
         }
-      }
-      if (e.key === 'ArrowLeft' && this.state.phase === 'whole_punch_arms') {
-        // Releasing ← stops the pull progress (must hold continuously)
-        // Note: pull progress pauses but doesn't reset — resume by holding again
       }
     });
     this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
@@ -672,7 +687,7 @@ export class Game {
             }
           }
         } else {
-          const hit = 7 + Math.floor(Math.random() * 7);
+          const hit = this.state.armsMashWeakMode ? 1 : (7 + Math.floor(Math.random() * 7));
           this.state.mashDamageTotal += hit;
           this.state.boss.hp = Math.max(0, this.state.boss.hp - hit);
           this.state.mashCount++;
@@ -780,41 +795,65 @@ export class Game {
 
     // whole_punch_arms key handling
     if (phase === 'whole_punch_arms') {
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        if (this.state.wholePunchPulling) {
-          // Each ArrowLeft tap while pulling adds pull progress
-          this.state.wholePunchPullT = Math.min(1, this.state.wholePunchPullT + 0.12);
-          if (this.state.wholePunchPullT >= 1) {
-            // Lid ripped off — boss defeated!
+      if (!this.state.wholePunchMashDone) {
+        // Sub-phase 1: Rush mash
+        if (e.code === 'Space' && this.state.wholePunchMashCooldown <= 0 && this.state.wholePunchMashTimer > 0) {
+          const hit = 6;
+          this.state.boss.hp = Math.max(0, this.state.boss.hp - hit);
+          this.state.wholePunchMashCount++;
+          this.state.wholePunchMashCooldown = 250;
+          this.state.damageNumbers.push({
+            value: hit,
+            x: RING_CX + (Math.random() - 0.5) * 80,
+            y: RING_CY - 40 + (Math.random() - 0.5) * 40,
+            alpha: 1, vy: -2.5, color: '#ff8800', scale: 1.3, effectType: 'damage',
+          });
+          this.spawnFlash('boss', '#ff8844');
+          if (this.state.wholePunchMashCount >= 10 || this.state.boss.hp <= 0) {
+            this.state.wholePunchMashDone = true;
+            if (this.state.boss.hp <= 0) { this.handleBossDefeated(); return; }
             this.state.damageNumbers.push({
-              value: 0, label: 'LID RIPPED OFF! HOLE PUNCH DEFEATED!',
-              x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -2, color: '#ffdd00', scale: 1.8,
+              value: 0, label: 'NOW RIP THE LID! Move hands to RIGHT CORNER!',
+              x: RING_CX, y: RING_CY - 70, alpha: 1, vy: -1.5, color: '#44ff88', scale: 1.3,
             });
-            this.spawnFlash('boss', '#ffffff');
-            this.state.boss.hp = 0;
-            this.handleBossDefeated();
           }
-        } else {
-          this.state.wholePunchArmsPos = Math.max(-3, this.state.wholePunchArmsPos - 1);
         }
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        if (!this.state.wholePunchPulling) {
-          this.state.wholePunchArmsPos = Math.min(3, this.state.wholePunchArmsPos + 1);
-        }
-      } else if (e.code === 'Space' && !this.state.wholePunchPulling) {
-        if (this.state.wholePunchArmsPos === 3) {
-          this.state.wholePunchPulling = true;
-          this.state.damageNumbers.push({
-            value: 0, label: 'GRIP! Hold ← to rip!',
-            x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -1.5, color: '#44ff88', scale: 1.3,
-          });
-        } else {
-          this.state.damageNumbers.push({
-            value: 0, label: 'Move to the right corner first!',
-            x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -1.5, color: '#ff8800', scale: 1.2,
-          });
+      } else {
+        // Sub-phase 2: Position and rip
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          if (this.state.wholePunchPulling) {
+            this.state.wholePunchPullT = Math.min(1, this.state.wholePunchPullT + 0.12);
+            if (this.state.wholePunchPullT >= 1) {
+              this.state.damageNumbers.push({
+                value: 0, label: 'LID RIPPED OFF! HOLE PUNCH DEFEATED!',
+                x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -2, color: '#ffdd00', scale: 1.8,
+              });
+              this.spawnFlash('boss', '#ffffff');
+              this.state.boss.hp = 0;
+              this.handleBossDefeated();
+            }
+          } else {
+            this.state.wholePunchArmsPos = Math.max(-3, this.state.wholePunchArmsPos - 1);
+          }
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          if (!this.state.wholePunchPulling) {
+            this.state.wholePunchArmsPos = Math.min(3, this.state.wholePunchArmsPos + 1);
+          }
+        } else if (e.code === 'Space' && !this.state.wholePunchPulling) {
+          if (this.state.wholePunchArmsPos === 3) {
+            this.state.wholePunchPulling = true;
+            this.state.damageNumbers.push({
+              value: 0, label: 'GRIP! Hold ← to rip!',
+              x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -1.5, color: '#44ff88', scale: 1.3,
+            });
+          } else {
+            this.state.damageNumbers.push({
+              value: 0, label: 'Move to the right corner first!',
+              x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -1.5, color: '#ff8800', scale: 1.2,
+            });
+          }
         }
       }
       return;
@@ -1200,6 +1239,8 @@ export class Game {
     } else if (phase === 'whole_punch_charge') {
       // Warning turn — show a 3s banner then go to setup (regular turn)
       this.state.wholePunchChargeTimer = 3000;
+      this.state.envelopeMessage = "The Hole Punch's charge attack is a brutal body slam. Seek higher ground to avoid heavy damage!";
+      this.state.envelopeTimer = 7000;
       this.transitionTo('whole_punch_charge');
     } else if (phase === 'whole_punch_attempt') {
       // Actual Whole Punch — 2s approach animation then impact
@@ -2036,6 +2077,8 @@ export class Game {
         if (cur <= 0) {
           state.bossAttackName = '';
           state.holePunchAnimPhase = 3;
+          state.envelopeMessage = "Hit the Hole Punch's soft, gray lid with your hammer to send some paper cutouts flying!";
+          state.envelopeTimer = 7000;
           this.transitionTo('puzzle');
         }
         break;
@@ -2207,9 +2250,15 @@ export class Game {
               x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -2, color: '#ffdd00', scale: 1.6,
             });
             this.spawnFlash('boss', '#ffff44');
+            state.wholePunchMashDone = false;
+            state.wholePunchMashTimer = 5000;
+            state.wholePunchMashCount = 0;
+            state.wholePunchMashCooldown = 0;
             state.wholePunchArmsPos = 0;
             state.wholePunchPulling = false;
             state.wholePunchPullT = 0;
+            state.envelopeMessage = "When the Hole Punch flips over, rush it with your 1,000-Fold Arms!";
+            state.envelopeTimer = 7000;
             this.transitionTo('whole_punch_arms');
           } else {
             // Mario wasn't elevated — boss lands full Whole Punch
@@ -2258,7 +2307,13 @@ export class Game {
       }
 
       case 'whole_punch_arms': {
-        // Input handled by keydown (ArrowLeft taps advance pull progress)
+        if (!state.wholePunchMashDone) {
+          state.wholePunchMashTimer = Math.max(0, state.wholePunchMashTimer - dt);
+          if (state.wholePunchMashCooldown > 0) state.wholePunchMashCooldown = Math.max(0, state.wholePunchMashCooldown - dt);
+          if (state.wholePunchMashTimer <= 0) {
+            state.wholePunchMashDone = true;
+          }
+        }
         break;
       }
 
@@ -2357,6 +2412,8 @@ export class Game {
               }
             }
             state.holePunchPunchCount = 0;
+            state.envelopeMessage = "Your max HP will drop drastically if you get hole punched. Reclaim your cut-out pieces to restore it!";
+            state.envelopeTimer = 7000;
             this.transitionTo('setup');
           } else {
             state.throwingPunchesDelayTimer = THROW_DELAY;
@@ -2653,6 +2710,11 @@ export class Game {
             // Only reached if magicCircleActive (simulatePath stops here when active)
             state.marioReachedMagicCircle = true;
             state.magicCircleActive = false; // consumed — needs ON again next time
+          } else if (step.panel === 'arms_magic_circle') {
+            // Like magic_circle but for arms mechanic
+            state.marioReachedMagicCircle = true;
+            state.marioReachedArmsMagicCircle = true;
+            state.magicCircleActive = false; // consumed
           } else if (step.panel === 'treasure_chest') {
             // Defer +1/×2 to next turn; place coins and hearts on board then
             state.chestPendingRewards = true;
@@ -2709,6 +2771,14 @@ export class Game {
               } else {
                 msg = "Be bold! Try bumping against one of those rubber-band panels!";
               }
+            } else if (state.bossIndex === 2) {
+              if (state.wholePunchReady) {
+                msg = "The Hole Punch's charge attack is a brutal body slam. Seek higher ground to avoid heavy damage!";
+              } else if (state.holePunchPunchCount > 0) {
+                msg = "Your max HP will drop drastically if you get hole punched. Reclaim your cut-out pieces to restore it!";
+              } else {
+                msg = "The Hole Punch's yellow body is really tough! He's hiding a vulnerable spot somewhere...";
+              }
             }
             if (msg) {
               state.envelopeMessage = msg;
@@ -2760,6 +2830,15 @@ export class Game {
               state.armsPullDamageDealt = false;
               state.bossAttackName = '1000-FOLD ARMS!';
               this.transitionTo('arms_grab');
+            } else if (state.marioReachedArmsMagicCircle && state.bossIndex === 2) {
+              // 1000-fold arms on non-flipped Hole Punch — weak mode (1 damage)
+              state.mashTimer = 5000;
+              state.mashDamageTotal = 0;
+              state.mashCount = 0;
+              state.mashCooldown = 0;
+              state.armsMashWeakMode = true;
+              state.bossAttackName = '1000-FOLD ARMS!';
+              this.transitionTo('mario_mash');
             } else if (state.marioReachedMagicCircle) {
               // Start mash attack (other bosses)
               state.mashTimer = 5000;

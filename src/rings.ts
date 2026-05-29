@@ -172,7 +172,7 @@ export function simulatePath(rings: RingState[], startRing = 3, startSlot = 6, m
       else if (lastDir === 'down') { if (ring === NUM_RINGS - 1) break; ring++; }
       else if (lastDir === 'left') { slot = (slot - 1 + 12) % 12; }
       else { slot = (slot + 1) % 12; }
-    } else if (panel === 'magic_circle') {
+    } else if (panel === 'magic_circle' || panel === 'arms_magic_circle') {
       if (magicCircleActive) {
         // Active magic circle stops Mario
         steps.push({ ring, slot, panel, pauseMs: 300 });
