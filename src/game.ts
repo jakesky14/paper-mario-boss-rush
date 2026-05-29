@@ -189,6 +189,7 @@ export class Game {
       holePunchPunchCount: 0,
       marioPartsHolePunched: 0,
       holePunchMaxHpLost: 0,
+      throwingPunchesEverUsed: false,
       mainSqueezeTimer: 0,
       holePunchInnerTimer: 0,
       gettinDownTimer: 0,
@@ -335,6 +336,7 @@ export class Game {
     this.state.holePunchPunchCount = 0;
     this.state.marioPartsHolePunched = 0;
     this.state.holePunchMaxHpLost = 0;
+    this.state.throwingPunchesEverUsed = false;
     this.state.throwingPunchesIdx = 0;
     this.state.throwingPunchesTotal = 0;
     this.state.throwingPunchesBoardCount = 0;
@@ -384,19 +386,45 @@ export class Game {
         if (this.state.rings[r].panels[c] === 'mario_part') marioParts.push([r, c]);
       }
     }
-    this.state.rings = createRings(this.state.boss.panels);
-    if (this.state.bossIndex === 0) {
-      ensureBacksideReachable(this.state.rings);
+    if (this.state.bossIndex === 2 && this.state.throwingPunchesEverUsed) {
+      // Board is fixed after Throwing Punches — preserve existing ring state
+    } else {
+      this.state.rings = createRings(this.state.boss.panels);
+      if (this.state.bossIndex === 0) {
+        ensureBacksideReachable(this.state.rings);
+      }
+      if (this.state.bossIndex === 2) {
+        // Always force earth_vellumental at slot 3 and clear adjacent distractors
+        this.state.rings[0].panels[3] = 'earth_vellumental';
+        this.state.rings[0].panels[4] = 'empty';
+        this.state.rings[0].panels[5] = 'empty';
+        this.state.rings[0].panels[7] = 'empty';
+        if (this.state.turnNumber === 1) {
+          // First turn only: force on_panel to ring 0 slot 6; remove all others
+          this.state.rings[0].panels[6] = 'on_panel';
+          for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 12; c++) {
+              if (r === 0 && c === 6) continue;
+              if (this.state.rings[r].panels[c] === 'on_panel') {
+                this.state.rings[r].panels[c] = 'empty';
+              }
+            }
+          }
+        } else {
+          // Subsequent turns: deduplicate — keep only the first on_panel found
+          let onFound = false;
+          for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 12; c++) {
+              if (this.state.rings[r].panels[c] === 'on_panel') {
+                if (onFound) this.state.rings[r].panels[c] = 'empty';
+                else onFound = true;
+              }
+            }
+          }
+        }
+      }
     }
-    // Boss 2 (Hole Punch): force ring 0 slots — on_panel at 6, earth_vellumental at 3, empty at 4,5,7
-    if (this.state.bossIndex === 2) {
-      this.state.rings[0].panels[3] = 'earth_vellumental';
-      this.state.rings[0].panels[4] = 'empty';
-      this.state.rings[0].panels[5] = 'empty';
-      this.state.rings[0].panels[6] = 'on_panel';
-      this.state.rings[0].panels[7] = 'empty';
-    }
-    // Restore mario_part panels after ring creation
+    // Restore mario_part panels after ring creation (or board-fixed turn)
     for (const [r, c] of marioParts) {
       this.state.rings[r].panels[c] = 'mario_part';
     }
@@ -2411,6 +2439,7 @@ export class Game {
               }
             }
             state.holePunchPunchCount = 0;
+            state.throwingPunchesEverUsed = true;
             this.transitionTo('setup');
           } else {
             state.throwingPunchesDelayTimer = THROW_DELAY;
