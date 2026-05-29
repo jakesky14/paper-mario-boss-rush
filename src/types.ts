@@ -1,5 +1,5 @@
 // Panel types for ring slots
-export type PanelType = 'empty' | 'action' | 'heal' | 'arrow_up' | 'arrow_left' | 'arrow_right' | 'plus_one' | 'double_power' | 'treasure_chest' | 'on_panel' | 'magic_circle' | 'arrow_down' | 'envelope' | 'coin' | 'rubber_band' | 'hole' | 'on_panel_holed' | 'mario_part' | 'earth_vellumental' | 'arms_magic_circle';
+export type PanelType = 'empty' | 'action' | 'heal' | 'arrow_up' | 'arrow_left' | 'arrow_right' | 'plus_one' | 'double_power' | 'treasure_chest' | 'on_panel' | 'magic_circle' | 'arrow_down' | 'envelope' | 'coin' | 'rubber_band' | 'hole' | 'on_panel_holed' | 'mario_part' | 'earth_vellumental';
 
 // Game phases
 export type Phase =
@@ -321,8 +321,7 @@ export interface GameState {
   wholePunchMashTimer: number;    // ms countdown for mash phase (5000)
   wholePunchMashCount: number;    // hits during mash
   wholePunchMashCooldown: number; // 250ms between hits
-  marioReachedArmsMagicCircle: boolean; // Mario stepped on arms_magic_circle
-  armsMashWeakMode: boolean;      // true → 1 damage per mash hit (not flipped)
+
 
   // Throwing Punches attack
   throwingPunchesIdx: number;         // which punch is currently being thrown

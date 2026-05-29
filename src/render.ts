@@ -65,7 +65,6 @@ const PANEL_COLORS: Record<PanelType, string> = {
   on_panel_holed: '#22aa44',
   mario_part:    '#cc2244',
   earth_vellumental: '#116611',
-  arms_magic_circle: '#0044cc',
 };
 
 // Ring background colors — warm tones matching screenshot
@@ -424,23 +423,6 @@ function drawPanelIcon(
       ctx.beginPath();
       ctx.arc(0, -size * 0.58, size * 0.2, 0, Math.PI * 2);
       ctx.fill();
-      break;
-    }
-    case 'arms_magic_circle': {
-      // Dark blue circle with golden fist symbol
-      ctx.beginPath();
-      ctx.arc(0, 0, size * 0.8, 0, Math.PI * 2);
-      ctx.fillStyle = '#001166';
-      ctx.fill();
-      ctx.strokeStyle = '#4488ff';
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-      // Golden arm/fist
-      ctx.fillStyle = '#ffdd00';
-      ctx.font = `bold ${Math.round(size * 0.9)}px monospace`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('✊', 0, 0);
       break;
     }
   }

@@ -212,8 +212,6 @@ export class Game {
       wholePunchMashTimer: 0,
       wholePunchMashCount: 0,
       wholePunchMashCooldown: 0,
-      marioReachedArmsMagicCircle: false,
-      armsMashWeakMode: false,
     };
   }
 
@@ -359,8 +357,6 @@ export class Game {
     this.state.wholePunchMashTimer = 0;
     this.state.wholePunchMashCount = 0;
     this.state.wholePunchMashCooldown = 0;
-    this.state.marioReachedArmsMagicCircle = false;
-    this.state.armsMashWeakMode = false;
     if (bossIndex === 1) {
       this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
       this.state.boss.maxHp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
@@ -379,6 +375,13 @@ export class Game {
 
   private startNewTurn(): void {
     this.state.ringHistory = [];
+    // Preserve mario_part panels placed by hole punch throws across turns
+    const marioParts: Array<[number, number]> = [];
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 12; c++) {
+        if (this.state.rings[r].panels[c] === 'mario_part') marioParts.push([r, c]);
+      }
+    }
     this.state.rings = createRings(this.state.boss.panels);
     if (this.state.bossIndex === 0) {
       ensureBacksideReachable(this.state.rings);
@@ -390,9 +393,10 @@ export class Game {
       this.state.rings[0].panels[5] = 'empty';
       this.state.rings[0].panels[6] = 'on_panel';
       this.state.rings[0].panels[7] = 'empty';
-      this.state.rings[0].panels[9] = 'arms_magic_circle';
-      this.state.marioReachedArmsMagicCircle = false;
-      this.state.armsMashWeakMode = false;
+    }
+    // Restore mario_part panels after ring creation
+    for (const [r, c] of marioParts) {
+      this.state.rings[r].panels[c] = 'mario_part';
     }
 
     // Treasure chest deferred rewards: place +1, ×2, coins, and hearts on board next turn
@@ -447,10 +451,6 @@ export class Game {
     this.state.attackQuality = 'none';
     this.state.envelopeMessage = '';
     this.state.envelopeTimer = 0;
-    if (this.state.bossIndex === 2 && this.state.turnNumber === 1) {
-      this.state.envelopeMessage = "The Hole Punch's yellow body is really tough! He's hiding a vulnerable spot somewhere...";
-      this.state.envelopeTimer = 7000;
-    }
     this.state.attacksRemaining = 1;
     // magicCircleActive persists between turns until used
     this.state.marioReachedMagicCircle = false;
@@ -687,7 +687,7 @@ export class Game {
             }
           }
         } else {
-          const hit = this.state.armsMashWeakMode ? 1 : (7 + Math.floor(Math.random() * 7));
+          const hit = this.state.bossIndex === 2 ? 1 : (7 + Math.floor(Math.random() * 7));
           this.state.mashDamageTotal += hit;
           this.state.boss.hp = Math.max(0, this.state.boss.hp - hit);
           this.state.mashCount++;
@@ -1239,8 +1239,6 @@ export class Game {
     } else if (phase === 'whole_punch_charge') {
       // Warning turn — show a 3s banner then go to setup (regular turn)
       this.state.wholePunchChargeTimer = 3000;
-      this.state.envelopeMessage = "The Hole Punch's charge attack is a brutal body slam. Seek higher ground to avoid heavy damage!";
-      this.state.envelopeTimer = 7000;
       this.transitionTo('whole_punch_charge');
     } else if (phase === 'whole_punch_attempt') {
       // Actual Whole Punch — 2s approach animation then impact
@@ -2077,8 +2075,6 @@ export class Game {
         if (cur <= 0) {
           state.bossAttackName = '';
           state.holePunchAnimPhase = 3;
-          state.envelopeMessage = "Hit the Hole Punch's soft, gray lid with your hammer to send some paper cutouts flying!";
-          state.envelopeTimer = 7000;
           this.transitionTo('puzzle');
         }
         break;
@@ -2257,8 +2253,6 @@ export class Game {
             state.wholePunchArmsPos = 0;
             state.wholePunchPulling = false;
             state.wholePunchPullT = 0;
-            state.envelopeMessage = "When the Hole Punch flips over, rush it with your 1,000-Fold Arms!";
-            state.envelopeTimer = 7000;
             this.transitionTo('whole_punch_arms');
           } else {
             // Mario wasn't elevated — boss lands full Whole Punch
@@ -2412,8 +2406,6 @@ export class Game {
               }
             }
             state.holePunchPunchCount = 0;
-            state.envelopeMessage = "Your max HP will drop drastically if you get hole punched. Reclaim your cut-out pieces to restore it!";
-            state.envelopeTimer = 7000;
             this.transitionTo('setup');
           } else {
             state.throwingPunchesDelayTimer = THROW_DELAY;
@@ -2710,11 +2702,6 @@ export class Game {
             // Only reached if magicCircleActive (simulatePath stops here when active)
             state.marioReachedMagicCircle = true;
             state.magicCircleActive = false; // consumed — needs ON again next time
-          } else if (step.panel === 'arms_magic_circle') {
-            // Like magic_circle but for arms mechanic
-            state.marioReachedMagicCircle = true;
-            state.marioReachedArmsMagicCircle = true;
-            state.magicCircleActive = false; // consumed
           } else if (step.panel === 'treasure_chest') {
             // Defer +1/×2 to next turn; place coins and hearts on board then
             state.chestPendingRewards = true;
@@ -2830,15 +2817,6 @@ export class Game {
               state.armsPullDamageDealt = false;
               state.bossAttackName = '1000-FOLD ARMS!';
               this.transitionTo('arms_grab');
-            } else if (state.marioReachedArmsMagicCircle && state.bossIndex === 2) {
-              // 1000-fold arms on non-flipped Hole Punch — weak mode (1 damage)
-              state.mashTimer = 5000;
-              state.mashDamageTotal = 0;
-              state.mashCount = 0;
-              state.mashCooldown = 0;
-              state.armsMashWeakMode = true;
-              state.bossAttackName = '1000-FOLD ARMS!';
-              this.transitionTo('mario_mash');
             } else if (state.marioReachedMagicCircle) {
               // Start mash attack (other bosses)
               state.mashTimer = 5000;
