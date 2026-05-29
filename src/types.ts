@@ -296,6 +296,7 @@ export interface GameState {
   holePunchShuffleCount: number;      // how many shuffles done
   holePunchPunchCount: number;        // Mario punches Hole Punch has (from hitting Mario with inner attack)
   marioPartsHolePunched: number;      // how many times HP has been hole-punched
+  holePunchMaxHpLost: number;         // total max HP lost to hole punches (for part recovery)
   mainSqueezeTimer: number;           // ms countdown for main_squeeze attack
   holePunchInnerTimer: number;        // ms for hole_punch_inner animation
   gettinDownTimer: number;            // ms for gettin_down attack

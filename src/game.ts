@@ -188,6 +188,7 @@ export class Game {
       holePunchShuffleCount: 0,
       holePunchPunchCount: 0,
       marioPartsHolePunched: 0,
+      holePunchMaxHpLost: 0,
       mainSqueezeTimer: 0,
       holePunchInnerTimer: 0,
       gettinDownTimer: 0,
@@ -333,6 +334,7 @@ export class Game {
     this.state.holePunchShuffleCount = 0;
     this.state.holePunchPunchCount = 0;
     this.state.marioPartsHolePunched = 0;
+    this.state.holePunchMaxHpLost = 0;
     this.state.throwingPunchesIdx = 0;
     this.state.throwingPunchesTotal = 0;
     this.state.throwingPunchesBoardCount = 0;
@@ -2194,6 +2196,7 @@ export class Game {
           state.playerMaxHp = Math.round(state.playerMaxHp / 2 + hpFromHeartPlus / 2);
           state.playerMaxHp = Math.max(10, state.playerMaxHp); // floor
           state.playerHp = Math.min(state.playerHp, state.playerMaxHp);
+          state.holePunchMaxHpLost += prevMax - state.playerMaxHp;
           state.damageNumbers.push({
             value: prevMax - state.playerMaxHp, label: `MAX HP -${prevMax - state.playerMaxHp}!`,
             x: RING_CX, y: RING_CY - 70, alpha: 1, vy: -2, color: '#ff66ff', scale: 1.3,
@@ -2273,7 +2276,9 @@ export class Game {
               + (state.accessories.silverHeartPlus ? 10 : 0)
               + (state.accessories.goldHeartPlus ? 15 : 0)
               + state.maxUpHeartsBought * 20;
+            const prevMaxWP = state.playerMaxHp;
             state.playerMaxHp = Math.max(10, Math.round((state.playerMaxHp * 0.5) + hpBonus * 0.5));
+            state.holePunchMaxHpLost += prevMaxWP - state.playerMaxHp;
             state.playerHp = Math.min(state.playerHp, state.playerMaxHp);
             state.damageNumbers.push({
               value: 0, label: 'HOLE PUNCHED ×2! MAX HP ↓↓',
@@ -2710,15 +2715,17 @@ export class Game {
               color: '#ffdd00', scale: 1.3, label: 'CHEST! Rewards next turn!',
             });
           } else if (step.panel === 'mario_part') {
-            // Recover HP equal to last boss damage taken
-            const recover = state.marioLastDamageTaken;
-            if (recover > 0) {
-              state.playerHp = Math.min(state.playerMaxHp, state.playerHp + recover);
-              state.damageNumbers.push({
-                value: recover, x: RING_CX, y: RING_CY - 40, alpha: 1, vy: -2,
-                color: '#ff88aa', scale: 1.3, label: `PART FOUND! +${recover} HP`, effectType: 'heal',
-              });
-            }
+            // Restore max HP — each part returns an equal share of total lost max HP
+            const partsLeft = Math.max(1, state.marioPartsHolePunched);
+            const maxHpRestore = Math.ceil(state.holePunchMaxHpLost / partsLeft);
+            state.playerMaxHp += maxHpRestore;
+            state.holePunchMaxHpLost = Math.max(0, state.holePunchMaxHpLost - maxHpRestore);
+            state.marioPartsHolePunched = Math.max(0, state.marioPartsHolePunched - 1);
+            state.playerHp = Math.min(state.playerMaxHp, state.playerHp + maxHpRestore);
+            state.damageNumbers.push({
+              value: maxHpRestore, x: RING_CX, y: RING_CY - 40, alpha: 1, vy: -2,
+              color: '#ff88aa', scale: 1.3, label: `PART FOUND! MAX HP +${maxHpRestore}`, effectType: 'heal',
+            });
             // Remove from board
             state.rings[step.ring].panels[step.slot] = 'empty';
           } else if (step.panel === 'coin') {
