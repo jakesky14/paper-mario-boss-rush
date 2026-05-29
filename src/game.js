@@ -66,7 +66,6 @@ export class Game {
             attackAnimT: 0,
             attackTimingPressed: false,
             attackQuality: 'none',
-            mushroomCount: 3,
             magicCircleActive: false,
             marioReachedMagicCircle: false,
             mashTimer: 0,
@@ -173,6 +172,16 @@ export class Game {
             rubberBandArmsUsed: false,
             rubberBandSoloWarned: false,
             rubberBandNormalAttackUsed: false,
+            chestPendingRewards: false,
+            marioLastDamageTaken: 0,
+            marioElevated: false,
+            wholePunchReady: false,
+            wholePunchCharged: false,
+            wholePunchArmsPos: 0,
+            wholePunchPulling: false,
+            wholePunchPullT: 0,
+            wholePunchAttemptTimer: 0,
+            wholePunchChargeTimer: 0,
         };
     }
     resetForBoss(bossIndex) {
@@ -194,6 +203,7 @@ export class Game {
         this.state.rotationAnim = null;
         this.state.slideAnim = null;
         this.state.lastDamageDealt = 0;
+        this.state.marioLastDamageTaken = 0;
         this.state.lastBossDamage = 0;
         this.state.damageNumbers = [];
         this.state.flashEffects = [];
@@ -220,7 +230,6 @@ export class Game {
         this.state.envelopeMessage = '';
         this.state.envelopeTimer = 0;
         this.state.attacksRemaining = 1;
-        this.state.mushroomCount = 3;
         this.state.magicCircleActive = false;
         this.state.marioReachedMagicCircle = false;
         this.state.mashTimer = 0;
@@ -303,6 +312,16 @@ export class Game {
         this.state.rubberBandArmsUsed = false;
         this.state.rubberBandSoloWarned = false;
         this.state.rubberBandNormalAttackUsed = false;
+        this.state.chestPendingRewards = false;
+        this.state.marioLastDamageTaken = 0;
+        this.state.marioElevated = false;
+        this.state.wholePunchReady = false;
+        this.state.wholePunchCharged = false;
+        this.state.wholePunchArmsPos = 0;
+        this.state.wholePunchPulling = false;
+        this.state.wholePunchPullT = 0;
+        this.state.wholePunchAttemptTimer = 0;
+        this.state.wholePunchChargeTimer = 0;
         if (bossIndex === 1) {
             this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
             this.state.boss.maxHp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
@@ -322,12 +341,35 @@ export class Game {
         if (this.state.bossIndex === 0) {
             ensureBacksideReachable(this.state.rings);
         }
-        // Boss 2 (Hole Punch): force ring 0 slots — on_panel at 6, empty at 4,5,7
+        // Boss 2 (Hole Punch): force ring 0 slots — on_panel at 6, earth_vellumental at 3, empty at 4,5,7
         if (this.state.bossIndex === 2) {
+            this.state.rings[0].panels[3] = 'earth_vellumental';
             this.state.rings[0].panels[4] = 'empty';
             this.state.rings[0].panels[5] = 'empty';
             this.state.rings[0].panels[6] = 'on_panel';
             this.state.rings[0].panels[7] = 'empty';
+        }
+        // Treasure chest deferred rewards: place +1, ×2, coins, and hearts on board next turn
+        if (this.state.chestPendingRewards) {
+            this.state.chestPendingRewards = false;
+            // Collect empty slots on rings 0-2
+            const candidates = [];
+            for (let r = 0; r <= 2; r++) {
+                for (let c = 0; c < 12; c++) {
+                    if (this.state.rings[r].panels[c] === 'empty')
+                        candidates.push([r, c]);
+                }
+            }
+            // Shuffle candidates
+            for (let i = candidates.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+            }
+            const toPlace = ['plus_one', 'double_power', 'coin', 'coin', 'heal', 'heal'];
+            for (let i = 0; i < toPlace.length && i < candidates.length; i++) {
+                const [r, c] = candidates[i];
+                this.state.rings[r].panels[c] = toPlace[i];
+            }
         }
         // Once boss 0 HP is at half or below, place magic circle every turn (until noReloadMode)
         if (this.state.bossIndex === 0 && this.state.boss.hp <= this.state.boss.maxHp / 2 && !this.state.noReloadMode) {
@@ -431,6 +473,10 @@ export class Game {
                     }
                 }
             }
+            if (e.key === 'ArrowLeft' && this.state.phase === 'whole_punch_arms') {
+                // Releasing ← stops the pull progress (must hold continuously)
+                // Note: pull progress pauses but doesn't reset — resume by holding again
+            }
         });
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('click', (e) => this.handleClick(e));
@@ -443,7 +489,8 @@ export class Game {
             'boss_reload', 'pencil_grab', 'rainbow_smash', 'rainbow_roll_attack', 'pullback', 'bumper_bands',
             'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback',
             'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot',
-            'enemy_turn_announce', 'hole_punch_attack', 'main_squeeze', 'gettin_down', 'hole_punch_inner', 'throwing_punches'];
+            'enemy_turn_announce', 'hole_punch_attack', 'main_squeeze', 'gettin_down', 'hole_punch_inner', 'throwing_punches',
+            'whole_punch_charge', 'whole_punch_attempt', 'whole_punch_arms'];
         if ((e.key === 'p' || e.key === 'P') && fightPhases.includes(phase)) {
             e.preventDefault();
             this.state.paused = !this.state.paused;
@@ -569,18 +616,6 @@ export class Game {
                 this.transitionTo('main_menu');
             }
             return;
-        }
-        // Mushroom item use
-        if ((e.key === 'i' || e.key === 'I') && this.state.mushroomCount > 0) {
-            if (phase === 'puzzle' || phase === 'attack_choice' || phase === 'mario_mash') {
-                this.state.mushroomCount--;
-                this.state.playerHp = Math.min(this.state.playerMaxHp, this.state.playerHp + 30);
-                this.state.damageNumbers.push({
-                    value: 30, x: RING_CX, y: RING_CY - 40, alpha: 1, vy: -2,
-                    color: '#44ff88', scale: 1.3, label: '🍄 +30 HP', effectType: 'heal',
-                });
-                return;
-            }
         }
         // Space bar — context-sensitive timing actions
         if (e.code === 'Space') {
@@ -731,6 +766,51 @@ export class Game {
             }
             else if (e.key === 'h' || e.key === 'H') {
                 this.startHammerAttack();
+            }
+            return;
+        }
+        // whole_punch_arms key handling
+        if (phase === 'whole_punch_arms') {
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                if (this.state.wholePunchPulling) {
+                    // Each ArrowLeft tap while pulling adds pull progress
+                    this.state.wholePunchPullT = Math.min(1, this.state.wholePunchPullT + 0.12);
+                    if (this.state.wholePunchPullT >= 1) {
+                        // Lid ripped off — boss defeated!
+                        this.state.damageNumbers.push({
+                            value: 0, label: 'LID RIPPED OFF! HOLE PUNCH DEFEATED!',
+                            x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -2, color: '#ffdd00', scale: 1.8,
+                        });
+                        this.spawnFlash('boss', '#ffffff');
+                        this.state.boss.hp = 0;
+                        this.handleBossDefeated();
+                    }
+                }
+                else {
+                    this.state.wholePunchArmsPos = Math.max(-3, this.state.wholePunchArmsPos - 1);
+                }
+            }
+            else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                if (!this.state.wholePunchPulling) {
+                    this.state.wholePunchArmsPos = Math.min(3, this.state.wholePunchArmsPos + 1);
+                }
+            }
+            else if (e.code === 'Space' && !this.state.wholePunchPulling) {
+                if (this.state.wholePunchArmsPos === 3) {
+                    this.state.wholePunchPulling = true;
+                    this.state.damageNumbers.push({
+                        value: 0, label: 'GRIP! Hold ← to rip!',
+                        x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -1.5, color: '#44ff88', scale: 1.3,
+                    });
+                }
+                else {
+                    this.state.damageNumbers.push({
+                        value: 0, label: 'Move to the right corner first!',
+                        x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -1.5, color: '#ff8800', scale: 1.2,
+                    });
+                }
             }
             return;
         }
@@ -1136,6 +1216,16 @@ export class Game {
             this.state.playerBlocked = false;
             this.transitionTo('hole_punch_inner');
         }
+        else if (phase === 'whole_punch_charge') {
+            // Warning turn — show a 3s banner then go to setup (regular turn)
+            this.state.wholePunchChargeTimer = 3000;
+            this.transitionTo('whole_punch_charge');
+        }
+        else if (phase === 'whole_punch_attempt') {
+            // Actual Whole Punch — 2s approach animation then impact
+            this.state.wholePunchAttemptTimer = 2000;
+            this.transitionTo('whole_punch_attempt');
+        }
         else if (phase === 'throwing_punches') {
             // Count all ring 0 board holes (holes from any slot, including shuffled positions)
             const r0 = this.state.rings[0].panels;
@@ -1180,19 +1270,31 @@ export class Game {
             this.announceEnemyTurn('solo_snapback_attack');
         }
         else if (this.state.bossIndex === 2) {
-            // Hole Punch attack routing based on Mario's final ring
+            // The Whole Punch sequence: triggers at ≤50 HP
+            if (this.state.boss.hp <= 50 && !this.state.wholePunchReady) {
+                // First time HP drops to 50 — issue warning this turn
+                this.state.wholePunchReady = true;
+                this.state.bossAttackName = 'THE WHOLE PUNCH CHARGING!';
+                this.announceEnemyTurn('whole_punch_charge');
+                return;
+            }
+            if (this.state.wholePunchReady && !this.state.wholePunchCharged) {
+                // Second turn at ≤50 HP — actual Whole Punch attempt
+                this.state.wholePunchCharged = true;
+                this.state.bossAttackName = 'THE WHOLE PUNCH!';
+                this.announceEnemyTurn('whole_punch_attempt');
+                return;
+            }
+            // Regular Hole Punch attack routing
             if (this.state.marioFinalRing <= 1) {
-                // Inner ring: Hole Punch + Base Slap
                 this.state.bossAttackName = 'HOLE PUNCH + BASE SLAP!';
                 this.announceEnemyTurn('hole_punch_inner');
             }
             else if (this.state.holePunchPunchCount === 0) {
-                // Outer ring, no punches: Gettin' Down
                 this.state.bossAttackName = "GETTIN' DOWN!";
                 this.announceEnemyTurn('gettin_down');
             }
             else {
-                // Outer ring, has Mario punches: Throwing Punches
                 this.state.bossAttackName = 'THROWING PUNCHES!';
                 this.announceEnemyTurn('throwing_punches');
             }
@@ -1984,7 +2086,7 @@ export class Game {
                             color: '#ff4444', scale: 1.5, label: `SQUEEEZE! -${rawDmg}`, effectType: 'damage',
                         });
                         this.spawnFlash('player', '#ff2200');
-                        state.lastBossDamage = rawDmg;
+                        state.marioLastDamageTaken = state.lastBossDamage = rawDmg;
                         if (state.playerHp <= 0) {
                             this.transitionTo('game_over');
                             break;
@@ -2028,7 +2130,7 @@ export class Game {
                             color: '#ff8800', scale: 1.4, label: `GETTIN' DOWN! -${rawDmg}`, effectType: 'damage',
                         });
                         this.spawnFlash('player', '#ff4400');
-                        state.lastBossDamage = rawDmg;
+                        state.marioLastDamageTaken = state.lastBossDamage = rawDmg;
                         if (state.playerHp <= 0) {
                             this.transitionTo('game_over');
                             break;
@@ -2084,7 +2186,7 @@ export class Game {
                             color: '#ff4444', scale: 1.5, label: `BASE SLAP! -${slapDmg}`, effectType: 'damage',
                         });
                         this.spawnFlash('player', '#ff0000');
-                        state.lastBossDamage = slapDmg;
+                        state.marioLastDamageTaken = state.lastBossDamage = slapDmg;
                         if (state.playerHp <= 0) {
                             this.transitionTo('game_over');
                             break;
@@ -2098,6 +2200,84 @@ export class Game {
                     }
                     this.transitionTo('setup');
                 }
+                break;
+            }
+            case 'whole_punch_charge': {
+                state.wholePunchChargeTimer = Math.max(0, state.wholePunchChargeTimer - dt);
+                if (state.wholePunchChargeTimer <= 0) {
+                    this.transitionTo('setup');
+                }
+                break;
+            }
+            case 'whole_punch_attempt': {
+                state.wholePunchAttemptTimer = Math.max(0, state.wholePunchAttemptTimer - dt);
+                if (state.wholePunchAttemptTimer <= 0) {
+                    if (state.marioElevated) {
+                        // Boss bonks elevated tile — flips over → arms mechanic
+                        state.marioElevated = false;
+                        state.damageNumbers.push({
+                            value: 0, label: 'BONK! Hole Punch flipped over!',
+                            x: RING_CX, y: RING_CY - 60, alpha: 1, vy: -2, color: '#ffdd00', scale: 1.6,
+                        });
+                        this.spawnFlash('boss', '#ffff44');
+                        state.wholePunchArmsPos = 0;
+                        state.wholePunchPulling = false;
+                        state.wholePunchPullT = 0;
+                        this.transitionTo('whole_punch_arms');
+                    }
+                    else {
+                        // Mario wasn't elevated — boss lands full Whole Punch
+                        const rawDmg = 20 + Math.floor(Math.random() * 5); // 20-24
+                        const dmg = this.applyGuardReduction(rawDmg);
+                        state.playerHp = Math.max(0, state.playerHp - dmg);
+                        state.marioLastDamageTaken = state.lastBossDamage = dmg;
+                        state.damageNumbers.push({
+                            value: dmg, x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2.5,
+                            color: '#ff2222', scale: 1.8, label: `THE WHOLE PUNCH! -${dmg}`, effectType: 'damage',
+                        });
+                        this.spawnFlash('player', '#ff0000');
+                        if (state.playerHp <= 0) {
+                            this.transitionTo('game_over');
+                            break;
+                        }
+                        // Double hole-punch Mario, then Throwing Punches
+                        state.marioPartsHolePunched += 2;
+                        state.holePunchPunchCount += 2;
+                        const hpBonus = (state.accessories.heartPlus ? 5 : 0)
+                            + (state.accessories.silverHeartPlus ? 10 : 0)
+                            + (state.accessories.goldHeartPlus ? 15 : 0)
+                            + state.maxUpHeartsBought * 20;
+                        state.playerMaxHp = Math.max(10, Math.round((state.playerMaxHp * 0.5) + hpBonus * 0.5));
+                        state.playerHp = Math.min(state.playerHp, state.playerMaxHp);
+                        state.damageNumbers.push({
+                            value: 0, label: 'HOLE PUNCHED ×2! MAX HP ↓↓',
+                            x: RING_CX, y: RING_CY - 80, alpha: 1, vy: -1.5, color: '#ff66ff', scale: 1.3,
+                        });
+                        if (state.playerHp <= 0) {
+                            this.transitionTo('game_over');
+                            break;
+                        }
+                        // Immediately do throwing punches (bypass announce)
+                        const r0 = state.rings[0].panels;
+                        const boardCount = r0.filter(p => p === 'hole' || p === 'on_panel_holed').length;
+                        const marioCount = state.holePunchPunchCount;
+                        state.throwingPunchesBoardCount = boardCount;
+                        state.throwingPunchesTotal = boardCount + marioCount;
+                        state.throwingPunchesIdx = 0;
+                        state.attackProjectileT = 0;
+                        state.throwingPunchesDelayTimer = 0;
+                        state.blockWindowOpen = false;
+                        state.playerBlocked = false;
+                        // After this attack, reset wholePunchReady so regular attacks resume
+                        state.wholePunchReady = false;
+                        state.wholePunchCharged = false;
+                        this.transitionTo('throwing_punches');
+                    }
+                }
+                break;
+            }
+            case 'whole_punch_arms': {
+                // Input handled by keydown (ArrowLeft taps advance pull progress)
                 break;
             }
             case 'throwing_punches': {
@@ -2149,7 +2329,7 @@ export class Game {
                             effectType: 'damage',
                         });
                         this.spawnFlash('player', isBoardPunch ? '#ff6600' : '#ff0000');
-                        state.lastBossDamage = dmg;
+                        state.marioLastDamageTaken = state.lastBossDamage = dmg;
                         if (state.playerHp <= 0) {
                             this.transitionTo('game_over');
                             break;
@@ -2190,7 +2370,7 @@ export class Game {
                             const toPlace = Math.min(marioPunchCount, candidates.length);
                             for (let i = 0; i < toPlace; i++) {
                                 const [r, c] = candidates[i];
-                                state.rings[r].panels[c] = 'coin';
+                                state.rings[r].panels[c] = 'mario_part';
                             }
                         }
                         state.holePunchPunchCount = 0;
@@ -2253,7 +2433,7 @@ export class Game {
                         const rawDmg = bindDmgTable[Math.min(3, state.marioFinalRing)];
                         const actualDmg = this.applyGuardReduction(rawDmg);
                         state.playerHp = Math.max(0, state.playerHp - actualDmg);
-                        state.lastBossDamage = actualDmg;
+                        state.marioLastDamageTaken = state.lastBossDamage = actualDmg;
                         const gapRad = (1.5 * Math.PI) / 180;
                         const arcSpan = (2 * Math.PI) / 12;
                         const startAngle = (state.marioFinalSlot / 12) * Math.PI * 2 - Math.PI / 2 + gapRad / 2;
@@ -2292,7 +2472,7 @@ export class Game {
                     const rawDmg = 16;
                     const actualDmg = state.snapbackBlocked ? this.applyGuardReduction(8) : this.applyGuardReduction(rawDmg);
                     state.playerHp = Math.max(0, state.playerHp - actualDmg);
-                    state.lastBossDamage = actualDmg;
+                    state.marioLastDamageTaken = state.lastBossDamage = actualDmg;
                     const mp = this.marioScreenPos();
                     state.damageNumbers.push({
                         value: actualDmg, x: mp.x, y: mp.y - 30,
@@ -2322,7 +2502,7 @@ export class Game {
                     const rawDmg = minDmg + Math.floor(Math.random() * (maxDmg - minDmg + 1));
                     const actualDmg = rawDmg; // unblockable, no guard reduction
                     state.playerHp = Math.max(0, state.playerHp - actualDmg);
-                    state.lastBossDamage = actualDmg;
+                    state.marioLastDamageTaken = state.lastBossDamage = actualDmg;
                     const gapRad = (1.5 * Math.PI) / 180;
                     const arcSpan = (2 * Math.PI) / 12;
                     const startAngle = (state.marioFinalSlot / 12) * Math.PI * 2 - Math.PI / 2 + gapRad / 2;
@@ -2403,17 +2583,36 @@ export class Game {
                         }
                         break;
                     }
+                    // Earth Vellumental: elevate Mario and end walk early
+                    if (step.panel === 'earth_vellumental') {
+                        state.marioElevated = true;
+                        state.damageNumbers.push({
+                            value: 0, x: RING_CX, y: RING_CY - 50, alpha: 1, vy: -2,
+                            color: '#44ff44', scale: 1.5, label: 'EARTH VELLUMENTAL! ELEVATED!',
+                        });
+                        this.spawnFlash('player', '#44ff44');
+                        const lastStep = path[state.marioWalkStep];
+                        state.marioFinalRing = lastStep.ring;
+                        state.marioFinalSlot = lastStep.slot;
+                        state.marioWalkStep = path.length;
+                        state.marioWalkTimer = 0;
+                        this.startEnemyTurn();
+                        break;
+                    }
                     // Apply step effects
                     if (step.panel === 'heal') {
-                        state.playerHp = Math.min(state.playerMaxHp, state.playerHp + 20);
+                        const healAmt = 20;
+                        state.playerHp = Math.min(state.playerMaxHp, state.playerHp + healAmt);
                         state.damageNumbers.push({
-                            value: 20, x: RING_CX, y: RING_CY - 40, alpha: 1, vy: -2,
-                            color: '#44ff88', scale: 1.3, effectType: 'heal',
+                            value: healAmt, x: RING_CX, y: RING_CY - 40, alpha: 1, vy: -2,
+                            color: '#44ff88', scale: 1.3, label: `HEART! +${healAmt} HP`, effectType: 'heal',
                         });
+                        // Remove from board (chest-placed hearts are consumed)
+                        state.rings[step.ring].panels[step.slot] = 'empty';
                     }
                     else if (step.panel === 'plus_one') {
-                        state.marioAttackCount = 1; // no longer doubles damage
-                        state.attacksRemaining = 2; // gives a second attack choice
+                        state.marioAttackCount = 1;
+                        state.attacksRemaining = 2;
                         state.damageNumbers.push({
                             value: 0,
                             label: '+1 ATTACK!',
@@ -2424,6 +2623,8 @@ export class Game {
                             color: '#ff88ff',
                             scale: 1.3,
                         });
+                        // Remove from board after use
+                        state.rings[step.ring].panels[step.slot] = 'empty';
                     }
                     else if (step.panel === 'double_power') {
                         state.marioDamageMult = 2;
@@ -2437,6 +2638,8 @@ export class Game {
                             color: '#ffdd00',
                             scale: 1.3,
                         });
+                        // Remove from board after use
+                        state.rings[step.ring].panels[step.slot] = 'empty';
                     }
                     else if (step.panel === 'action') {
                         state.marioReachedAction = true;
@@ -2460,40 +2663,40 @@ export class Game {
                         state.magicCircleActive = false; // consumed — needs ON again next time
                     }
                     else if (step.panel === 'treasure_chest') {
-                        state.playerHp = Math.min(state.playerMaxHp, state.playerHp + 10);
+                        // Defer +1/×2 to next turn; place coins and hearts on board then
+                        state.chestPendingRewards = true;
                         state.damageNumbers.push({
-                            value: 10, x: RING_CX - 20, y: RING_CY - 40, alpha: 1, vy: -2,
-                            color: '#44ff88', scale: 1.2, label: '+10', effectType: 'heal',
+                            value: 0, x: RING_CX, y: RING_CY - 40, alpha: 1, vy: -2,
+                            color: '#ffdd00', scale: 1.3, label: 'CHEST! Rewards next turn!',
                         });
-                        // Spawn a heal and a coin in upcoming empty steps
-                        let healSpawned = false;
-                        let coinSpawned = false;
-                        for (let i = state.marioWalkStep + 1; i < path.length && (!healSpawned || !coinSpawned); i++) {
-                            if (path[i].panel === 'empty') {
-                                if (!healSpawned) {
-                                    path[i] = { ...path[i], panel: 'heal', pauseMs: 600 };
-                                    healSpawned = true;
-                                }
-                                else if (!coinSpawned) {
-                                    path[i] = { ...path[i], panel: 'coin', pauseMs: 200 };
-                                    coinSpawned = true;
-                                }
-                            }
+                    }
+                    else if (step.panel === 'mario_part') {
+                        // Recover HP equal to last boss damage taken
+                        const recover = state.marioLastDamageTaken;
+                        if (recover > 0) {
+                            state.playerHp = Math.min(state.playerMaxHp, state.playerHp + recover);
+                            state.damageNumbers.push({
+                                value: recover, x: RING_CX, y: RING_CY - 40, alpha: 1, vy: -2,
+                                color: '#ff88aa', scale: 1.3, label: `PART FOUND! +${recover} HP`, effectType: 'heal',
+                            });
                         }
+                        // Remove from board
+                        state.rings[step.ring].panels[step.slot] = 'empty';
                     }
                     else if (step.panel === 'coin') {
-                        state.coinBonus += 5;
-                        state.coins += 100;
+                        state.coins += 150;
                         state.damageNumbers.push({
                             value: 0,
-                            label: '+5 DMG',
+                            label: '+150 COINS!',
                             x: RING_CX + 20,
                             y: RING_CY - 35,
                             alpha: 1,
                             vy: -2,
                             color: '#ffdd00',
-                            scale: 1.1,
+                            scale: 1.2,
                         });
+                        // Remove from board
+                        state.rings[step.ring].panels[step.slot] = 'empty';
                     }
                     else if (step.panel === 'envelope') {
                         // Determine message based on game state
@@ -2720,7 +2923,7 @@ export class Game {
                     let actualDmg = state.playerBlocked ? Math.max(0, Math.floor(bossDmg / 2)) : bossDmg;
                     actualDmg = this.applyGuardReduction(actualDmg);
                     state.playerHp = Math.max(0, state.playerHp - actualDmg);
-                    state.lastBossDamage = actualDmg;
+                    state.marioLastDamageTaken = state.lastBossDamage = actualDmg;
                     // Spawn damage number
                     const marioPos = this.marioScreenPos();
                     state.damageNumbers.push({
@@ -2808,7 +3011,7 @@ export class Game {
                         // This pencil hits
                         const pencilDmg = this.applyGuardReduction(3);
                         state.playerHp = Math.max(0, state.playerHp - pencilDmg);
-                        state.lastBossDamage = pencilDmg;
+                        state.marioLastDamageTaken = state.lastBossDamage = pencilDmg;
                         const marioPos = this.marioScreenPos();
                         state.damageNumbers.push({
                             value: pencilDmg, x: marioPos.x + (Math.random() - 0.5) * 30,
@@ -2842,7 +3045,7 @@ export class Game {
                 if (state.attackProjectileT >= 1.0) {
                     const raw = state.marioFinalRing === 0 ? 17 : state.marioFinalRing === 1 ? 13 : 0;
                     const snapDmg = this.applyGuardReduction(raw);
-                    state.lastBossDamage = snapDmg;
+                    state.marioLastDamageTaken = state.lastBossDamage = snapDmg;
                     if (snapDmg > 0) {
                         state.playerHp = Math.max(0, state.playerHp - snapDmg);
                         const marioPos = this.marioScreenPos();
@@ -2919,7 +3122,7 @@ export class Game {
                     const rawDmg = state.playerBlocked ? Math.ceil(baseDmg / 2) : baseDmg;
                     const actualDmg = this.applyGuardReduction(rawDmg);
                     state.playerHp = Math.max(0, state.playerHp - actualDmg);
-                    state.lastBossDamage = actualDmg;
+                    state.marioLastDamageTaken = state.lastBossDamage = actualDmg;
                     // rainbowRollReady stays true — rolls every turn until Mario uses magic circle
                     const marioPos = this.marioScreenPos();
                     state.damageNumbers.push({
@@ -2991,7 +3194,7 @@ export class Game {
                             const rawDmg = 21 + Math.floor(Math.random() * 2);
                             const actualDmg = this.applyGuardReduction(rawDmg);
                             state.playerHp = Math.max(0, state.playerHp - actualDmg);
-                            state.lastBossDamage = actualDmg;
+                            state.marioLastDamageTaken = state.lastBossDamage = actualDmg;
                             const mp = this.marioScreenPos();
                             state.damageNumbers.push({
                                 value: actualDmg, x: mp.x, y: mp.y - 30,
@@ -3033,7 +3236,7 @@ export class Game {
                     const rawDmg = state.snapbackBlocked ? Math.ceil(rawFull / 2) : rawFull;
                     const actualDmg = this.applyGuardReduction(rawDmg);
                     state.playerHp = Math.max(0, state.playerHp - actualDmg);
-                    state.lastBossDamage = actualDmg;
+                    state.marioLastDamageTaken = state.lastBossDamage = actualDmg;
                     const mp = this.marioScreenPos();
                     state.damageNumbers.push({
                         value: actualDmg, x: mp.x, y: mp.y - 30,

@@ -1,5 +1,5 @@
 // Panel types for ring slots
-export type PanelType = 'empty' | 'action' | 'heal' | 'arrow_up' | 'arrow_left' | 'arrow_right' | 'plus_one' | 'double_power' | 'treasure_chest' | 'on_panel' | 'magic_circle' | 'arrow_down' | 'envelope' | 'coin' | 'rubber_band' | 'hole' | 'on_panel_holed';
+export type PanelType = 'empty' | 'action' | 'heal' | 'arrow_up' | 'arrow_left' | 'arrow_right' | 'plus_one' | 'double_power' | 'treasure_chest' | 'on_panel' | 'magic_circle' | 'arrow_down' | 'envelope' | 'coin' | 'rubber_band' | 'hole' | 'on_panel_holed' | 'mario_part' | 'earth_vellumental';
 
 // Game phases
 export type Phase =
@@ -44,7 +44,10 @@ export type Phase =
   | 'main_squeeze'
   | 'gettin_down'
   | 'hole_punch_inner'
-  | 'throwing_punches';
+  | 'throwing_punches'
+  | 'whole_punch_charge'
+  | 'whole_punch_attempt'
+  | 'whole_punch_arms';
 
 export interface AccessoryInventory {
   heartPlus: boolean;
@@ -183,7 +186,6 @@ export interface GameState {
   attackAnimT: number;           // 0..1 progress for jump/hammer animation
   attackTimingPressed: boolean;  // player pressed Space during jump/hammer
   attackQuality: 'none' | 'nice' | 'great' | 'excellent'; // timing quality
-  mushroomCount: number;           // mushroom items Mario has
   magicCircleActive: boolean;      // ON panel was stepped on this turn
   marioReachedMagicCircle: boolean;
   mashTimer: number;               // ms remaining in mash phase (5000ms)
@@ -297,6 +299,24 @@ export interface GameState {
   mainSqueezeTimer: number;           // ms countdown for main_squeeze attack
   holePunchInnerTimer: number;        // ms for hole_punch_inner animation
   gettinDownTimer: number;            // ms for gettin_down attack
+
+  // Treasure chest deferred rewards
+  chestPendingRewards: boolean;
+
+  // Mario last damage taken (for mario_part panel recovery)
+  marioLastDamageTaken: number;
+
+  // Earth Vellumental / elevation
+  marioElevated: boolean;
+
+  // The Whole Punch (boss 2 ≤50 HP)
+  wholePunchReady: boolean;      // true when HP drops to 50 — warning issued
+  wholePunchCharged: boolean;    // true on the actual attack turn
+  wholePunchArmsPos: number;     // -3..3 cursor for lid-rip mechanic
+  wholePunchPulling: boolean;    // player is holding ← to rip
+  wholePunchPullT: number;       // 0..1 rip progress
+  wholePunchAttemptTimer: number; // ms for the attempt animation
+  wholePunchChargeTimer: number;  // ms for warning phase
 
   // Throwing Punches attack
   throwingPunchesIdx: number;         // which punch is currently being thrown

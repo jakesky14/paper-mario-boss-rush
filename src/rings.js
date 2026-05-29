@@ -33,7 +33,7 @@ export function createRings(dist) {
     while (pool.length < total)
         pool.push('empty');
     // Enforce max 1 of each special panel per run
-    const limitedPanels = ['double_power', 'plus_one', 'treasure_chest', 'on_panel', 'envelope'];
+    const limitedPanels = ['treasure_chest', 'on_panel', 'envelope'];
     for (const sp of limitedPanels) {
         let found = false;
         for (let i = 0; i < pool.length; i++) {
@@ -239,7 +239,7 @@ export function simulatePath(rings, startRing = 3, startSlot = 6, magicCircleAct
                 slot = (slot + 1) % 12;
             }
         }
-        else if (panel === 'heal' || panel === 'coin') {
+        else if (panel === 'heal' || panel === 'coin' || panel === 'mario_part') {
             steps.push({ ring, slot, panel, pauseMs: 600 });
             if (lastDir === 'up') {
                 if (ring === 0)
@@ -256,6 +256,33 @@ export function simulatePath(rings, startRing = 3, startSlot = 6, magicCircleAct
             }
             else {
                 slot = (slot + 1) % 12;
+            }
+        }
+        else if (panel === 'earth_vellumental') {
+            if (magicCircleActive) {
+                // Activated — elevates Mario and stops path
+                steps.push({ ring, slot, panel, pauseMs: 800 });
+                break;
+            }
+            else {
+                // Not activated — pass through
+                steps.push({ ring, slot, panel: 'empty', pauseMs: 0 });
+                if (lastDir === 'up') {
+                    if (ring === 0)
+                        break;
+                    ring--;
+                }
+                else if (lastDir === 'down') {
+                    if (ring === NUM_RINGS - 1)
+                        break;
+                    ring++;
+                }
+                else if (lastDir === 'left') {
+                    slot = (slot - 1 + 12) % 12;
+                }
+                else {
+                    slot = (slot + 1) % 12;
+                }
             }
         }
         else if (panel === 'plus_one' || panel === 'double_power') {

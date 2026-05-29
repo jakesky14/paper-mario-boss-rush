@@ -60,6 +60,8 @@ const PANEL_COLORS = {
     rubber_band: '#cc4400',
     hole: '#111111',
     on_panel_holed: '#22aa44',
+    mario_part: '#cc2244',
+    earth_vellumental: '#116611',
 };
 // Ring background colors — warm tones matching screenshot
 const RING_BG_COLORS = ['#d4872a', '#e0a030', '#c8b870', '#b8a860'];
@@ -328,6 +330,54 @@ function drawPanelIcon(ctx, panelType, x, y, size, midAngle, midR, slotIndex, ri
             ctx.strokeStyle = '#444444';
             ctx.lineWidth = 1;
             ctx.stroke();
+            break;
+        }
+        case 'mario_part': {
+            // Red circle with white M
+            ctx.beginPath();
+            ctx.arc(0, 0, size * 0.75, 0, Math.PI * 2);
+            ctx.fillStyle = '#cc0033';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${Math.round(size * 1.0)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('M', 0, 0);
+            break;
+        }
+        case 'earth_vellumental': {
+            // Green circle with turtle silhouette
+            ctx.beginPath();
+            ctx.arc(0, 0, size * 0.8, 0, Math.PI * 2);
+            ctx.fillStyle = '#114411';
+            ctx.fill();
+            ctx.strokeStyle = '#44ff44';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+            // Turtle shell
+            ctx.fillStyle = '#44ff44';
+            ctx.beginPath();
+            ctx.arc(0, -size * 0.05, size * 0.45, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#114411';
+            ctx.beginPath();
+            ctx.arc(0, -size * 0.05, size * 0.28, 0, Math.PI * 2);
+            ctx.fill();
+            // Legs
+            ctx.fillStyle = '#44ff44';
+            const legR = size * 0.18;
+            for (const [lx, ly] of [[-size * 0.45, size * 0.1], [size * 0.45, size * 0.1], [-size * 0.35, size * 0.42], [size * 0.35, size * 0.42]]) {
+                ctx.beginPath();
+                ctx.arc(lx, ly, legR, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            // Head
+            ctx.beginPath();
+            ctx.arc(0, -size * 0.58, size * 0.2, 0, Math.PI * 2);
+            ctx.fill();
             break;
         }
     }
@@ -827,11 +877,12 @@ export function drawRightSidebar(ctx, state, tick) {
         ctx.font = 'bold 11px monospace';
         ctx.fillText(`Boss hit: ${state.lastBossDamage}`, sx, 330);
     }
-    // Mushroom count
-    ctx.fillStyle = '#44ff88';
-    ctx.font = '11px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(`🍄 Mushrooms: ${state.mushroomCount}  [I] to use`, sx, 350);
+    if (state.marioElevated) {
+        ctx.fillStyle = '#44ff44';
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('ELEVATED ▲', sx, 350);
+    }
     if (state.coinBonus > 0) {
         ctx.fillStyle = '#ffdd00';
         ctx.font = '10px monospace';
@@ -924,7 +975,7 @@ function getPhaseHint(state) {
         case 'mario_walk':
             return state.envelopeMessage ? '📨 Reading envelope...' : 'Mario is walking the path...';
         case 'mario_mash':
-            return 'MASH SPACE to smash the boss! [I] for mushroom';
+            return 'MASH SPACE to smash the boss!';
         case 'boss_attack':
         case 'pencil_rain':
         case 'snap_shut':
@@ -987,6 +1038,14 @@ function getPhaseHint(state) {
                 return `HOLE PUNCH! (unblockable) — punch ${state.throwingPunchesIdx + 1} of ${state.throwingPunchesTotal}`;
             return `THROWING PUNCHES — punch ${state.throwingPunchesIdx + 1} of ${state.throwingPunchesTotal} — PRESS SPACE to block!`;
         }
+        case 'whole_punch_charge':
+            return 'THE WHOLE PUNCH is charging! Use the Earth Vellumental to elevate next turn!';
+        case 'whole_punch_attempt':
+            return state.marioElevated ? 'ELEVATED! Hole Punch will bonk your tile!' : 'THE WHOLE PUNCH! (no elevation — brace for impact!)';
+        case 'whole_punch_arms':
+            return state.wholePunchPulling
+                ? `Ripping... ${Math.round(state.wholePunchPullT * 100)}% — Keep pressing ← !`
+                : state.wholePunchArmsPos === 3 ? 'PRESS SPACE to grip the lid corner!' : 'Use ← → to move hands to the RIGHT CORNER!';
         case 'save_prompt':
             return '← → navigate   ENTER confirm';
         default:
@@ -1648,7 +1707,7 @@ export function drawHowToPlay(ctx, state) {
             ['SPACE', 'Timing press (action windows)'],
             ['SPACE', 'Block incoming attacks'],
             ['SPACE', 'Mash during 1000-Fold Arms'],
-            ['↓ held', 'Pull / slingshot charge'],
+            ['ENTER', 'Confirm ring'],
         ];
         ctx.font = '15px monospace';
         combatControls.forEach(([key, desc], i) => {
@@ -2426,7 +2485,8 @@ function drawPauseButton(ctx, state, tick) {
         'boss_reload', 'pencil_grab', 'rainbow_smash', 'rainbow_roll_attack', 'pullback', 'bumper_bands',
         'rubber_bind', 'arms_grab', 'snapback', 'trapped_snapback',
         'solo_snapback_charge', 'solo_grab_attempt', 'solo_snapback_attack', 'solo_slam', 'solo_slingshot',
-        'gettin_down', 'hole_punch_inner', 'throwing_punches', 'main_squeeze'];
+        'gettin_down', 'hole_punch_inner', 'throwing_punches', 'main_squeeze',
+        'whole_punch_charge', 'whole_punch_attempt', 'whole_punch_arms'];
     if (!fightPhases.includes(state.phase))
         return;
     const { x, y, w, h } = PAUSE_BTN;
@@ -3585,6 +3645,151 @@ function marioScreenPosForState(state) {
     const angle = (slot / 12) * Math.PI * 2 - Math.PI / 2;
     return { x: RING_CX + Math.cos(angle) * r, y: RING_CY + Math.sin(angle) * r };
 }
+function drawWholePunchCharge(ctx, state, tick) {
+    const pulse = 0.7 + 0.3 * Math.sin(tick * 0.04);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    const bw = 520, bh = 60;
+    const bx = CANVAS_W / 2 - bw / 2, by = RING_CY - bh / 2 - 60;
+    ctx.fillStyle = '#880000';
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ff4444';
+    ctx.font = 'bold 24px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.strokeText('⚠ THE WHOLE PUNCH CHARGING! Use Earth Vellumental! ⚠', CANVAS_W / 2, by + 38);
+    ctx.fillText('⚠ THE WHOLE PUNCH CHARGING! Use Earth Vellumental! ⚠', CANVAS_W / 2, by + 38);
+    ctx.restore();
+    void state;
+    void tick;
+}
+function drawWholePunchAttempt(ctx, state, tick) {
+    const elapsed = 2000 - state.wholePunchAttemptTimer;
+    const frac = Math.min(1, elapsed / 2000);
+    ctx.save();
+    const bw = 460, bh = 55;
+    const bx = CANVAS_W / 2 - bw / 2, by = RING_CY - bh - BOSS_RADIUS - 10;
+    ctx.fillStyle = '#550000';
+    ctx.strokeStyle = '#ff2222';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ff6666';
+    ctx.font = 'bold 24px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    const label = state.marioElevated ? 'THE WHOLE PUNCH! (ELEVATED — Hole Punch will bonk!)' : 'THE WHOLE PUNCH!';
+    ctx.strokeText(label, CANVAS_W / 2, by + 36);
+    ctx.fillText(label, CANVAS_W / 2, by + 36);
+    // Progress bar
+    const barW = 340, barH = 12;
+    const barX = CANVAS_W / 2 - barW / 2, barY = by + bh + 8;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#ff2222';
+    ctx.fillRect(barX, barY, barW * frac, barH);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.restore();
+    void tick;
+}
+function drawWholePunchArms(ctx, state, tick) {
+    ctx.save();
+    // Flipped Hole Punch boss (gray/dark rounded rectangle flipped over)
+    const bx = RING_CX, by = RING_CY - BOSS_RADIUS - 20;
+    ctx.fillStyle = '#555555';
+    ctx.strokeStyle = '#333333';
+    ctx.lineWidth = 4;
+    // Flipped body (upside-down)
+    ctx.save();
+    ctx.translate(bx, by);
+    ctx.rotate(Math.PI); // flipped
+    ctx.beginPath();
+    ctx.roundRect(-55, -25, 110, 50, 12);
+    ctx.fill();
+    ctx.stroke();
+    // Handle (lever)
+    ctx.fillStyle = '#888888';
+    ctx.beginPath();
+    ctx.rect(-8, -48, 16, 26);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    // Banner
+    const bw = 460, bh = 50;
+    const bannerX = CANVAS_W / 2 - bw / 2, bannerY = RING_CY - bh - BOSS_RADIUS - 10;
+    ctx.fillStyle = '#222';
+    ctx.strokeStyle = '#44ff44';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(bannerX, bannerY, bw, bh, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#44ff88';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
+    const msg = state.wholePunchPulling
+        ? `RIPPING! ← ← ←  ${Math.round(state.wholePunchPullT * 100)}%`
+        : state.wholePunchArmsPos === 3 ? 'PRESS SPACE to grip lid corner!' : 'Move hands to RIGHT CORNER with ←/→';
+    ctx.strokeText(msg, CANVAS_W / 2, bannerY + 33);
+    ctx.fillText(msg, CANVAS_W / 2, bannerY + 33);
+    // Arms cursor — red bezier arms
+    const footX = CANVAS_W / 2, footY = RING_CY + BOSS_RADIUS + 20;
+    const cursorOff = state.wholePunchArmsPos * 50;
+    const targetX = RING_CX + cursorOff;
+    const isAligned = state.wholePunchArmsPos === 3;
+    const armColor = state.wholePunchPulling ? '#44ff88' : isAligned ? '#ffdd00' : '#cc2222';
+    for (const side of [-1, 1]) {
+        const handX = targetX + side * 30;
+        const handY = by - 15;
+        ctx.beginPath();
+        ctx.moveTo(footX + side * 40, footY);
+        ctx.bezierCurveTo(footX + side * 80, footY - 80, handX + side * 30, handY + 60, handX, handY);
+        ctx.strokeStyle = armColor;
+        ctx.lineWidth = 12;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(handX, handY, 12, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = armColor;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    }
+    // Pull progress bar
+    if (state.wholePunchPulling) {
+        const barW = 300, barH = 18;
+        const barX = CANVAS_W / 2 - barW / 2, barY2 = bannerY + bh + 8;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, barY2, barW, barH);
+        ctx.fillStyle = '#44ff44';
+        ctx.fillRect(barX, barY2, barW * state.wholePunchPullT, barH);
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY2, barW, barH);
+    }
+    // Position indicator
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Position: ${state.wholePunchArmsPos} / 3`, CANVAS_W / 2, bannerY - 12);
+    ctx.restore();
+    void tick;
+}
 function drawEnemyTurnAnnounce(ctx, state, tick) {
     // Show for first 2000ms, then fade for 1000ms
     const elapsed = 3000 - state.enemyTurnAnnounceTimer;
@@ -3690,6 +3895,9 @@ export function render(ctx, state, tick) {
         case 'gettin_down':
         case 'hole_punch_inner':
         case 'throwing_punches':
+        case 'whole_punch_charge':
+        case 'whole_punch_attempt':
+        case 'whole_punch_arms':
         case 'rainbow_smash':
         case 'rainbow_roll_attack':
         case 'pullback':
@@ -3843,6 +4051,33 @@ export function render(ctx, state, tick) {
     if (state.phase === 'throwing_punches') {
         drawThrowingPunchesPhase(ctx, state, tick);
         drawBlockUI(ctx, state, tick);
+    }
+    if (state.phase === 'whole_punch_charge') {
+        drawWholePunchCharge(ctx, state, tick);
+    }
+    if (state.phase === 'whole_punch_attempt') {
+        drawWholePunchAttempt(ctx, state, tick);
+    }
+    if (state.phase === 'whole_punch_arms') {
+        drawWholePunchArms(ctx, state, tick);
+    }
+    // Elevated Mario tile highlight (green box)
+    if (state.marioElevated && (state.phase === 'puzzle' || state.phase === 'mario_walk' || state.phase === 'attack_choice' || state.phase === 'mario_jump' || state.phase === 'mario_hammer')) {
+        const ring = state.marioFinalRing;
+        const slot = state.marioFinalSlot;
+        const r = BOSS_RADIUS + RING_WIDTH * (ring + 0.5);
+        const angle = (slot / 12) * Math.PI * 2 - Math.PI / 2;
+        const ex = RING_CX + Math.cos(angle) * r;
+        const ey = RING_CY + Math.sin(angle) * r;
+        ctx.save();
+        const pulse = 0.6 + 0.4 * Math.sin(tick * 0.05);
+        ctx.strokeStyle = '#44ff44';
+        ctx.lineWidth = 4;
+        ctx.globalAlpha = pulse;
+        ctx.shadowColor = '#44ff44';
+        ctx.shadowBlur = 12;
+        ctx.strokeRect(ex - 18, ey - 18, 36, 36);
+        ctx.restore();
     }
     if (state.phase === 'hole_punch_attack' && state.holePunchAnimPhase === 1) {
         // Punch flash: bright yellow/white overlay on inner ring slots 4-7
