@@ -4586,25 +4586,6 @@ export function render(
     drawWholePunchArms(ctx, state, tick);
   }
 
-  // Elevated Mario tile highlight (green box)
-  if (state.marioElevated && (state.phase === 'puzzle' || state.phase === 'mario_walk' || state.phase === 'attack_choice' || state.phase === 'mario_jump' || state.phase === 'mario_hammer')) {
-    const ring = state.marioFinalRing;
-    const slot = state.marioFinalSlot;
-    const r = BOSS_RADIUS + RING_WIDTH * (ring + 0.5);
-    const angle = (slot / 12) * Math.PI * 2 - Math.PI / 2;
-    const ex = RING_CX + Math.cos(angle) * r;
-    const ey = RING_CY + Math.sin(angle) * r;
-    ctx.save();
-    const pulse = 0.6 + 0.4 * Math.sin(tick * 0.05);
-    ctx.strokeStyle = '#44ff44';
-    ctx.lineWidth = 4;
-    ctx.globalAlpha = pulse;
-    ctx.shadowColor = '#44ff44';
-    ctx.shadowBlur = 12;
-    ctx.strokeRect(ex - 18, ey - 18, 36, 36);
-    ctx.restore();
-  }
-
   if (state.phase === 'hole_punch_attack' && state.holePunchAnimPhase === 1) {
     // Punch flash: bright yellow/white overlay on inner ring slots 4-7
     const pulse = 0.6 + 0.4 * Math.sin(tick * 0.04);

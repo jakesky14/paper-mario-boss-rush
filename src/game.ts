@@ -214,6 +214,7 @@ export class Game {
       wholePunchMashTimer: 0,
       wholePunchMashCount: 0,
       wholePunchMashCooldown: 0,
+      holePunchLidPhase: false,
     };
   }
 
@@ -361,6 +362,7 @@ export class Game {
     this.state.wholePunchMashTimer = 0;
     this.state.wholePunchMashCount = 0;
     this.state.wholePunchMashCooldown = 0;
+    this.state.holePunchLidPhase = false;
     if (bossIndex === 1) {
       this.state.boss.hp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
       this.state.boss.maxHp = this.state.rubberBandCount * this.state.rubberBandHpPerBand;
@@ -399,31 +401,17 @@ export class Game {
         ensureBacksideReachable(this.state.rings);
       }
       if (this.state.bossIndex === 2) {
-        // Always force earth_vellumental at slot 3 and clear adjacent distractors
         this.state.rings[0].panels[3] = 'earth_vellumental';
         this.state.rings[0].panels[4] = 'empty';
         this.state.rings[0].panels[5] = 'empty';
         this.state.rings[0].panels[7] = 'empty';
-        if (this.state.turnNumber === 1) {
-          // First turn only: force on_panel to ring 0 slot 6; remove all others
-          this.state.rings[0].panels[6] = 'on_panel';
-          for (let r = 0; r < 4; r++) {
-            for (let c = 0; c < 12; c++) {
-              if (r === 0 && c === 6) continue;
-              if (this.state.rings[r].panels[c] === 'on_panel') {
-                this.state.rings[r].panels[c] = 'empty';
-              }
-            }
-          }
-        } else {
-          // Subsequent turns: deduplicate — keep only the first on_panel found
-          let onFound = false;
-          for (let r = 0; r < 4; r++) {
-            for (let c = 0; c < 12; c++) {
-              if (this.state.rings[r].panels[c] === 'on_panel') {
-                if (onFound) this.state.rings[r].panels[c] = 'empty';
-                else onFound = true;
-              }
+        // Always force on_panel to ring 0 slot 6 — the one that gets hole punched
+        this.state.rings[0].panels[6] = 'on_panel';
+        for (let r = 0; r < 4; r++) {
+          for (let c = 0; c < 12; c++) {
+            if (r === 0 && c === 6) continue;
+            if (this.state.rings[r].panels[c] === 'on_panel') {
+              this.state.rings[r].panels[c] = 'empty';
             }
           }
         }
@@ -1311,6 +1299,38 @@ export class Game {
     this.state.snapbackBlocked = false;
     this.state.bossAttackName = 'SOLO SNAPBACK!';
     this.transitionTo('solo_snapback_attack');
+  }
+
+  private startLidPuzzle(): void {
+    const s = this.state;
+    s.movesLeft = MAX_MOVES;
+    s.maxMoves = MAX_MOVES;
+    const timerBonus = this.rollTimerBonus();
+    const maxTimer = PUZZLE_DURATION + timerBonus;
+    s.puzzleMaxTimer = maxTimer;
+    s.puzzleTimer = maxTimer;
+    s.rotationAnim = null;
+    s.slideAnim = null;
+    s.activeRingMoveStarted = false;
+    s.attackChoice = 'none';
+    s.marioWalkPath = [];
+    s.marioWalkStep = 0;
+    s.marioWalkTimer = 0;
+    s.marioAttackCount = 1;
+    s.marioDamageMult = 1;
+    s.marioReachedAction = false;
+    s.marioReachedMagicCircle = false;
+    s.puzzleControlMode = 'ring_select';
+    s.ringCursor = 3;
+    s.columnCursor = 6;
+    s.marioFinalRing = 3;
+    s.marioFinalSlot = 6;
+    s.attackAnimT = 0;
+    s.attackTimingPressed = false;
+    s.attackQuality = 'none';
+    s.holePunchLidPhase = true;
+    s.magicCircleActive = true; // pre-activate so Mario can reach magic_circle directly
+    this.transitionTo('puzzle');
   }
 
   private startEnemyTurn(): void {
@@ -2863,8 +2883,22 @@ export class Game {
               state.armsPullDamageDealt = false;
               state.bossAttackName = '1000-FOLD ARMS!';
               this.transitionTo('arms_grab');
+            } else if (state.marioReachedMagicCircle && state.bossIndex === 2 && state.holePunchLidPhase) {
+              // Lid-peel puzzle: magic circle reached → go straight to whole_punch_arms
+              state.holePunchLidPhase = false;
+              state.wholePunchReady = false;
+              state.wholePunchCharged = false;
+              state.wholePunchMashDone = false;
+              state.wholePunchMashTimer = 5000;
+              state.wholePunchMashCount = 0;
+              state.wholePunchMashCooldown = 0;
+              state.wholePunchArmsPos = 0;
+              state.wholePunchPulling = false;
+              state.wholePunchPullT = 0;
+              state.bossAttackName = 'PEEL THE LID!';
+              this.transitionTo('whole_punch_arms');
             } else if (state.marioReachedMagicCircle) {
-              // Start mash attack (other bosses)
+              // Start mash attack (other bosses / boss 2 non-lid-phase)
               state.mashTimer = 5000;
               state.mashDamageTotal = 0;
               state.bossAttackName = '1000-FOLD ARMS!';
@@ -2971,6 +3005,13 @@ export class Game {
         state.mashTimer = Math.max(0, state.mashTimer - dt);
         if (state.mashTimer <= 0) {
           state.lastDamageDealt = state.mashDamageTotal + state.coinBonus;
+
+          if (state.bossIndex === 2) {
+            // Boss 2: after rush mash, always start the lid-peel puzzle (don't go to enemy turn)
+            // Boss defeat is deferred until Mario peels the lid in whole_punch_arms
+            this.startLidPuzzle();
+            break;
+          }
 
           if (state.boss.hp <= 0) {
             this.handleBossDefeated();

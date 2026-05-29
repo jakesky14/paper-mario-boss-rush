@@ -323,7 +323,7 @@ export interface GameState {
   wholePunchMashTimer: number;    // ms countdown for mash phase (5000)
   wholePunchMashCount: number;    // hits during mash
   wholePunchMashCooldown: number; // 250ms between hits
-
+  holePunchLidPhase: boolean;  // true after rush mash — second puzzle to reach magic_circle for lid peel
 
   // Throwing Punches attack
   throwingPunchesIdx: number;         // which punch is currently being thrown
