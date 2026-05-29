@@ -26,7 +26,7 @@ export const BOSSES: BossDef[] = [
     maxHp: 150,
     attack: 18,
     color: '#ffcc00',
-    panels: { action: 3, plus_one: 0, double_power: 0, arrow_up: 6, arrow_left: 2, arrow_right: 2, treasure_chest: 3, on_panel: 2, magic_circle: 2, arrow_down: 2, envelope: 1, empty: 25 },
+    panels: { action: 3, plus_one: 0, double_power: 0, arrow_up: 6, arrow_left: 2, arrow_right: 2, treasure_chest: 3, on_panel: 1, magic_circle: 2, arrow_down: 2, envelope: 1, empty: 26 },
     special: 'hole_punch',
   },
   {

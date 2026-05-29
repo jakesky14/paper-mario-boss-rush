@@ -387,7 +387,12 @@ export class Game {
       }
     }
     if (this.state.bossIndex === 2 && this.state.throwingPunchesEverUsed) {
-      // Board is fixed after Throwing Punches — preserve existing ring state
+      // Board is fixed after Throwing Punches — restore any holes left by inner punch attacks
+      const r0 = this.state.rings[0].panels;
+      for (let s = 0; s < 12; s++) {
+        if (r0[s] === 'hole') r0[s] = 'empty';
+        if (r0[s] === 'on_panel_holed') r0[s] = 'on_panel';
+      }
     } else {
       this.state.rings = createRings(this.state.boss.panels);
       if (this.state.bossIndex === 0) {
@@ -2041,13 +2046,18 @@ export class Game {
             this.transitionTo('bumper_bands');
           }
         } else if (state.bossIndex === 2) {
-          // Hole Punch: 2000ms animation then puzzle
-          // Holes applied at the 1200ms mark (800ms remaining), not immediately
-          state.holePunchAttackTimer = 2000;
-          state.holePunchAnimPhase = 0;
-          state.holePunchShuffleCount = 0;
-          state.bossAttackName = 'HOLE PUNCH!';
-          this.transitionTo('hole_punch_attack');
+          if (state.throwingPunchesEverUsed) {
+            // After Throwing Punches the board is fixed; skip hole punch animation
+            this.transitionTo('puzzle');
+          } else {
+            // Hole Punch: 2000ms animation then puzzle
+            // Holes applied at the 1200ms mark (800ms remaining), not immediately
+            state.holePunchAttackTimer = 2000;
+            state.holePunchAnimPhase = 0;
+            state.holePunchShuffleCount = 0;
+            state.bossAttackName = 'HOLE PUNCH!';
+            this.transitionTo('hole_punch_attack');
+          }
         } else {
           this.transitionTo('puzzle');
         }
